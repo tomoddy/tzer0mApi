@@ -9,7 +9,7 @@ builder.Services.AddSwaggerGen();
 WebApplication app = builder.Build();
 app.UseSwagger();
 app.UseSwaggerUI();
-app.MapGet("/", () => Results.Redirect("/swagger", true));
+app.MapGet("/", () => Results.Redirect("/swagger", true)).ExcludeFromDescription();
 app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();
