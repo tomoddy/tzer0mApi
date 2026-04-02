@@ -1,0 +1,6 @@
+@tzer0mApi_HostAddress = http://localhost:5234
+
+GET {{tzer0mApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
