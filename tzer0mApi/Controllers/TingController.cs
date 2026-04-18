@@ -11,6 +11,10 @@ namespace tzer0mApi.Controllers
     [Route("[controller]")]
     public class TingController : ControllerBase
     {
+        // Constants for file paths
+        private const string SERVICE_ACCOUNT_CREDENTIALS = "serviceAccountCredentials.json";
+        private const string FCM_TOKEN_FILE = "Services/FCM/fcmToken.txt";
+
         /// <summary>
         /// Send notification to device
         /// </summary>
@@ -21,8 +25,8 @@ namespace tzer0mApi.Controllers
         public async Task<string> Index(string title, string body)
         {
             // Get access and fcm tokens
-            string accessToken = await FCMHelper.GetAccessToken("serviceAccountCredentials.json");
-            string fcmToken = System.IO.File.ReadAllText("Services/FCM/fcmToken.txt");
+            string accessToken = await FCMHelper.GetAccessToken(SERVICE_ACCOUNT_CREDENTIALS);
+            string fcmToken = System.IO.File.ReadAllText(FCM_TOKEN_FILE);
 
             // Create client and request message
             HttpClient client = new();
@@ -46,7 +50,10 @@ namespace tzer0mApi.Controllers
         [HttpPost("Update", Name = "Ting Update")]
         public async Task Update([FromBody] UpdateBody body)
         {
-            System.IO.File.WriteAllText("Services/FCM/fcmToken.txt", body.FCMToken);
+            if (!System.IO.File.Exists(FCM_TOKEN_FILE))
+                System.IO.File.Create(FCM_TOKEN_FILE).Dispose();
+
+            System.IO.File.WriteAllText(FCM_TOKEN_FILE, body.FCMToken);
         }
     }
 }
