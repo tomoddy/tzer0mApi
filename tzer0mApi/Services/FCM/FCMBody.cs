@@ -8,7 +8,7 @@ namespace tzer0mApi.Services.FCM
     /// <param name="token">FCM token</param>
     /// <param name="title">Message title</param>
     /// <param name="body">Message body</param>
-    public class Body(string token, string title, string body)
+    public class FCMBody(string token, string title, string body)
     {
         /// <summary>
         /// Message
