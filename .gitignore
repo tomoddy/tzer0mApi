@@ -363,3 +363,6 @@ MigrationBackup/
 FodyWeavers.xsd
 /tzer0mApi/appsettings.json
 /tzer0mApi/appsettings.Development.json
+/tzer0mApi/Services/Keys/keys.csv
+/tzer0mApi/Services/FCM/fcmToken.txt
+/tzer0mApi/serviceAccountCredentials.json
