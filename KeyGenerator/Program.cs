@@ -1,4 +1,5 @@
 ﻿using System.Security.Cryptography;
+using System.Text;
 
 internal class Program
 {
@@ -10,7 +11,7 @@ internal class Program
 
         // Hash key
         Console.WriteLine("Hashing key...");
-        byte[] keyBytes = SHA256.HashData(guid.ToByteArray());
+        byte[] keyBytes = SHA256.HashData(Encoding.UTF8.GetBytes(guid.ToString()));
         string key = Convert.ToBase64String(keyBytes);
 
         // Write hashed key to file
