@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "KeyGenerator": {
+      "commandName": "Project",
+      "commandLineArgs": "\"D:/Test/keys.csv\""
+    }
+  }
+}
