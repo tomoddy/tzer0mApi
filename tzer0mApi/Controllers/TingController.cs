@@ -48,7 +48,7 @@ namespace tzer0mApi.Controllers
         /// <param name="body">Update body containing the new FCM token</param>
         /// <returns>Task</returns>
         [HttpPost("Update", Name = "Ting Update")]
-        public async Task Update([FromBody] UpdateBody body)
+        public void Update([FromBody] UpdateBody body)
         {
             if (!System.IO.File.Exists(FCM_TOKEN_FILE))
                 System.IO.File.Create(FCM_TOKEN_FILE).Dispose();
