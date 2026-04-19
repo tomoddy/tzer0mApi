@@ -45,7 +45,7 @@ namespace tzer0mApi.Services.Middleware
             }
 
             // Check if request path is private, if not skip authentication check
-            if (!privatePaths.Contains(context.Request.Path.Value))
+            if (!privatePaths.Contains(context.Request.Path.Value.ToLowerInvariant()))
             {
                 await _next(context);
                 return;
