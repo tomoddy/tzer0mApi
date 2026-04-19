@@ -27,12 +27,12 @@ namespace tzer0mApi.Services.OpenUV
             OpenUVResult maxValue = openUVResponse!.Result!.OrderByDescending(x => x.UV).First();
             int maxValueIndex = openUVResponse.Result.IndexOf(maxValue);
 
-            // Create UV points for max, morning, and evening
+            // Create UV points for max, morning, and afternoon
             UVPoints =
             [
                 new UVPoint("max", maxValue),
                 new UVPoint("morning", openUVResponse.Result[(openUVResponse.Result.Count - maxValueIndex) / 2 + 1]),
-                new UVPoint("evening", openUVResponse.Result[(openUVResponse.Result.Count - maxValueIndex) / 2 + maxValueIndex - 1]),
+                new UVPoint("afternoon", openUVResponse.Result[(openUVResponse.Result.Count - maxValueIndex) / 2 + maxValueIndex - 1]),
             ];
         }
     }

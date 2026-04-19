@@ -42,7 +42,7 @@ namespace tzer0mApi.Controllers
         /// <param name="latitude">Latitude</param>
         /// <param name="longitude">Longitude</param>
         /// <param name="altitude">Altitude (m)</param>
-        /// <returns></returns>
+        /// <returns>UV report</returns>
         /// <exception cref="BadHttpRequestException">Data could not be fetched from OpenUV</exception>
         /// <exception cref="JsonException">Response could not be deserialised</exception>
         [HttpGet("UV", Name = "UV Report")]
@@ -68,6 +68,25 @@ namespace tzer0mApi.Controllers
 
             // Check response, convert and return
             return openUVResponse is null ? throw new JsonException("Could not deserialise data from OpenUV") : new UVReport(openUVResponse);
+        }
+
+        /// <summary>
+        /// Calls UV endpoint and send notification with details
+        /// </summary>
+        /// <param name="latitude">Latitude</param>
+        /// <param name="longitude">Longitude</param>
+        /// <param name="altitude">Altitude (m)</param>
+        /// <returns>Task</returns>
+        [HttpGet("UV/Notify", Name = "UV Report with Notification")]
+        public async Task GetUVReportAndNotify(double latitude, double longitude, int altitude = 0)
+        {
+            UVReport report = await GetUVReport(latitude, longitude, altitude);
+            UVPoint max = report.UVPoints.First(uVP => uVP.Window == "max");
+            UVPoint morning = report.UVPoints.First(uVP => uVP.Window == "morning");
+            UVPoint afternoon = report.UVPoints.First(uVP => uVP.Window == "afternoon");
+
+            string body = $"Morning: {morning.UVRounded} at {morning.Time:h:mm}\nMaximum: {max.UVRounded} at {max.Time:h:mm}\nAfternoon: {afternoon.UVRounded} at {afternoon.Time:h:mm}";
+            await new TingController().Index("UV Report", body);
         }
     }
 }

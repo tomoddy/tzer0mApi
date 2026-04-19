@@ -18,6 +18,11 @@ namespace tzer0mApi.Services.OpenUV
         /// UV value
         /// </summary>
         public float UV { get; set; } = result.UV;
+        
+        /// <summary>
+        /// Rounded UV value
+        /// </summary>
+        public float UVRounded => (float)Math.Round(UV, 1);
 
         /// <summary>
         /// Time of measurement
