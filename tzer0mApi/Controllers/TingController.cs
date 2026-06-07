@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
+using System.Text;
 using tzer0mApi.Services.FCM;
 
 namespace tzer0mApi.Controllers
@@ -7,13 +8,19 @@ namespace tzer0mApi.Controllers
     /// <summary>
     /// Ting controller
     /// </summary>
+    /// <param name="configuration">Configuration</param>
     [ApiController]
     [Route("[controller]")]
-    public class TingController : ControllerBase
+    public class TingController(IConfiguration configuration) : ControllerBase
     {
         // Constants for file paths
         private const string SERVICE_ACCOUNT_CREDENTIALS = "serviceAccountCredentials.json";
         private const string FCM_TOKEN_FILE = "Services/FCM/fcmToken.txt";
+
+        /// <summary>
+        /// RSS API key
+        /// </summary>
+        private string? RssApiKey { get; set; } = configuration["RSS_API_KEY"];
 
         /// <summary>
         /// Send notification to device
@@ -39,6 +46,18 @@ namespace tzer0mApi.Controllers
             // Send request and return response
             HttpResponseMessage response = await client.SendAsync(requestMessage);
             response.EnsureSuccessStatusCode();
+
+            // Post to RSS feed
+            HttpRequestMessage rssRequest = new(HttpMethod.Post, "https://rss.tzer0m.co.uk/post");
+            rssRequest.Headers.Add("X-API-Key", RssApiKey);
+            rssRequest.Content = new StringContent(
+                JsonConvert.SerializeObject(new { title, summary = "Ting", content = body }),
+                Encoding.UTF8,
+                "application/json"
+            );
+            await client.SendAsync(rssRequest);
+
+            // Return response
             return await response.Content.ReadAsStringAsync();
         }
 
