@@ -1,4 +1,5 @@
 using tzer0mApi.Services.Middleware;
+using tzer0mApi.Services.Ting;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -6,6 +7,7 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddScoped<TingService>();
 
 // Build app
 WebApplication app = builder.Build();

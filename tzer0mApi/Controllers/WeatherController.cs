@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Newtonsoft.Json;
 using tzer0mApi.Services.OpenUV;
 using tzer0mApi.Services.OpenUV.Objects;
+using tzer0mApi.Services.Ting;
 
 namespace tzer0mApi.Controllers
 {
@@ -21,6 +22,11 @@ namespace tzer0mApi.Controllers
         private string ApiKey { get; set; }
 
         /// <summary>
+        /// Ting service
+        /// </summary>
+        private TingService TingService { get; set; }
+
+        /// <summary>
         /// Http client
         /// </summary>
         private HttpClient Client { get; set; } = new HttpClient();
@@ -30,10 +36,11 @@ namespace tzer0mApi.Controllers
         /// </summary>
         /// <param name="configuration">Configuration</param>
         /// <exception cref="NullReferenceException">Thrown if config values are missing</exception>
-        public WeatherController(IConfiguration configuration)
+        public WeatherController(IConfiguration configuration, TingService tingService)
         {
             BaseUrl = configuration["Weather:OpenUV:BaseUrl"] ?? throw new NullReferenceException(nameof(BaseUrl));
             ApiKey = configuration["Weather:OpenUV:ApiKey"] ?? throw new NullReferenceException(nameof(ApiKey));
+            TingService = tingService;
         }
 
         /// <summary>
@@ -85,8 +92,9 @@ namespace tzer0mApi.Controllers
             UVPoint morning = report.UVPoints.First(uVP => uVP.Window == "morning");
             UVPoint afternoon = report.UVPoints.First(uVP => uVP.Window == "afternoon");
 
+            // Send notification and post to RSS feed
             string body = $"Morning: {morning.UVRounded} at {morning.Time:h:mm}\nMaximum: {max.UVRounded} at {max.Time:h:mm}\nAfternoon: {afternoon.UVRounded} at {afternoon.Time:h:mm}";
-            await new TingController().Index("UV Report", body);
+            await TingService.Send("UV Report", body, "UV Report");
         }
     }
 }

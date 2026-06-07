@@ -1,64 +1,30 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Newtonsoft.Json;
-using System.Text;
 using tzer0mApi.Services.FCM;
+using tzer0mApi.Services.Ting;
 
 namespace tzer0mApi.Controllers
 {
     /// <summary>
     /// Ting controller
     /// </summary>
-    /// <param name="configuration">Configuration</param>
+    /// <param name="tingService">Ting service</param>
     [ApiController]
     [Route("[controller]")]
-    public class TingController(IConfiguration configuration) : ControllerBase
+    public class TingController(TingService tingService) : ControllerBase
     {
         // Constants for file paths
-        private const string SERVICE_ACCOUNT_CREDENTIALS = "serviceAccountCredentials.json";
         private const string FCM_TOKEN_FILE = "Services/FCM/fcmToken.txt";
-
-        /// <summary>
-        /// RSS API key
-        /// </summary>
-        private string? RssApiKey { get; set; } = configuration["RSS_API_KEY"];
 
         /// <summary>
         /// Send notification to device
         /// </summary>
         /// <param name="title">Notification title</param>
         /// <param name="body">Notification body</param>
-        /// <returns>Message content</returns>
+        /// <returns>Task</returns>
         [HttpGet(Name = "Ting")]
-        public async Task<string> Index(string title, string body)
+        public async Task Index(string title, string body)
         {
-            // Get access and fcm tokens
-            string accessToken = await FCMHelper.GetAccessToken(SERVICE_ACCOUNT_CREDENTIALS);
-            string fcmToken = System.IO.File.ReadAllText(FCM_TOKEN_FILE);
-
-            // Create client and request message
-            HttpClient client = new();
-            HttpRequestMessage requestMessage = new(HttpMethod.Post, "https://fcm.googleapis.com/v1/projects/ting-tzer0m/messages:send");
-
-            // Add headers and content
-            requestMessage.Headers.Add("Authorization", $"Bearer {accessToken}");
-            requestMessage.Content = new StringContent(JsonConvert.SerializeObject(new FCMBody(fcmToken, title, body)));
-
-            // Send request and return response
-            HttpResponseMessage response = await client.SendAsync(requestMessage);
-            response.EnsureSuccessStatusCode();
-
-            // Post to RSS feed
-            HttpRequestMessage rssRequest = new(HttpMethod.Post, "https://rss.tzer0m.co.uk/post");
-            rssRequest.Headers.Add("X-API-Key", RssApiKey);
-            rssRequest.Content = new StringContent(
-                JsonConvert.SerializeObject(new { title, summary = "Ting", content = body }),
-                Encoding.UTF8,
-                "application/json"
-            );
-            await client.SendAsync(rssRequest);
-
-            // Return response
-            return await response.Content.ReadAsStringAsync();
+            await tingService.Send(title, body);
         }
 
         /// <summary>
