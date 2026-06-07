@@ -17,7 +17,7 @@ namespace tzer0mApi.Services.Ting
         /// <summary>
         /// RSS API key
         /// </summary>
-        private readonly string? _rssApiKey = configuration["RSS_API_KEY"];
+        private readonly string? RssApiKey = configuration["RssApiKey"];
 
         /// <summary>
         /// Send notification to device and post to RSS feed
@@ -30,7 +30,7 @@ namespace tzer0mApi.Services.Ting
         {
             // Get access and fcm tokens
             string accessToken = await FCMHelper.GetAccessToken(SERVICE_ACCOUNT_CREDENTIALS);
-            string fcmToken = System.IO.File.ReadAllText(FCM_TOKEN_FILE);
+            string fcmToken = File.ReadAllText(FCM_TOKEN_FILE);
 
             // Create client and request message
             HttpClient client = new();
@@ -40,19 +40,22 @@ namespace tzer0mApi.Services.Ting
             requestMessage.Headers.Add("Authorization", $"Bearer {accessToken}");
             requestMessage.Content = new StringContent(JsonConvert.SerializeObject(new FCMBody(fcmToken, title, body)));
 
-            // Send request and return response
+            // Send request and check response
             HttpResponseMessage response = await client.SendAsync(requestMessage);
             response.EnsureSuccessStatusCode();
 
             // Post to RSS feed
             HttpRequestMessage rssRequest = new(HttpMethod.Post, "https://rss.tzer0m.co.uk/post");
-            rssRequest.Headers.Add("X-API-Key", _rssApiKey);
+            rssRequest.Headers.Add("X-API-Key", RssApiKey);
             rssRequest.Content = new StringContent(
                 JsonConvert.SerializeObject(new { title, summary, content = body }),
                 Encoding.UTF8,
                 "application/json"
             );
-            await client.SendAsync(rssRequest);
+
+            // Send request and check response
+            HttpResponseMessage rssResponse = await client.SendAsync(rssRequest);
+            rssResponse.EnsureSuccessStatusCode();
         }
     }
 }
