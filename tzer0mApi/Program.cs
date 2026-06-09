@@ -1,4 +1,6 @@
 using tzer0mApi.Services.Middleware;
+using tzer0mApi.Services.SmarterMeter;
+using tzer0mApi.Services.SmarterMeter.ImageProcessing;
 using tzer0mApi.Services.Ting;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
@@ -8,6 +10,9 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<TingService>();
+builder.Services.AddSingleton<ImageProcessingService>();
+builder.Services.AddHttpClient<VisionService>();
+builder.Services.AddSingleton<DatabaseService>();
 
 // Build app
 WebApplication app = builder.Build();
