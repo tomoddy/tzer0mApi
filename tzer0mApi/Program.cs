@@ -1,3 +1,4 @@
+using tzer0mApi.Services.Keys;
 using tzer0mApi.Services.Middleware;
 using tzer0mApi.Services.SmarterMeter;
 using tzer0mApi.Services.Ting;
@@ -11,6 +12,7 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<TingService>();
 builder.Services.AddHttpClient<VisionService>();
 builder.Services.AddSingleton<DatabaseService>();
+builder.Services.AddScoped<KeysService>();
 
 // Build app
 WebApplication app = builder.Build();

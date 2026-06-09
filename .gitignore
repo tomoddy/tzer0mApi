@@ -365,3 +365,4 @@ FodyWeavers.xsd
 /tzer0mApi/appsettings.Development.json
 /tzer0mApi/Services/FCM/fcmToken.txt
 /tzer0mApi/serviceAccountCredentials.json
+/KeyGenerator/appsettings.json

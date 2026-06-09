@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Primitives;
 using System.Security.Cryptography;
 using System.Text;
+using tzer0mApi.Services.Keys;
 
 namespace tzer0mApi.Services.Middleware
 {
@@ -15,9 +16,6 @@ namespace tzer0mApi.Services.Middleware
 
         // Header name
         private const string KEY_HEADER_NAME = "X-API-Key";
-
-        // Cached keys
-        private static List<string>? CachedHashedKeys;
 
         /// <summary>
         /// Checks the request for a valid API key if the path is private, otherwise continues to the next middleware
@@ -63,27 +61,16 @@ namespace tzer0mApi.Services.Middleware
             byte[] extractedKeyBytes = SHA256.HashData(Encoding.UTF8.GetBytes(extractedKey.ToString()));
             string hashedExtractedKey = Convert.ToBase64String(extractedKeyBytes);
 
-            // Get keys path from configuration and check if valid
-            string? keysPath = configuration.GetValue<string>("Authentication:KeysPath");
-            if (keysPath is null)
-            {
-                context.Response.StatusCode = 500;
-                await context.Response.WriteAsync("Keys path is not configured");
-                return;
-            }
-
-            // Load keys from file if not already loaded
-            CachedHashedKeys ??= [.. File.ReadAllLines(keysPath)];
-
-            // Check if hashed extracted key is in the list of valid keys
-            if (!CachedHashedKeys.Contains(hashedExtractedKey))
+            // Validate against database
+            KeysService keysService = context.RequestServices.GetRequiredService<KeysService>();
+            if (!await keysService.IsValidKeyAsync(hashedExtractedKey))
             {
                 context.Response.StatusCode = 403;
                 await context.Response.WriteAsync("Unauthorized client");
                 return;
             }
 
-            // Key is value, continue
+            // Key is valid, continue
             await _next(context);
         }
     }
