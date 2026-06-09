@@ -9,10 +9,17 @@ namespace tzer0mApi.Services.SmarterMeter;
 /// <remarks>
 /// Initialises the service with the connection string from configuration.
 /// </remarks>
-public class DatabaseService(ILogger<DatabaseService> logger, IConfiguration config)
+public class DatabaseService(ILogger<DatabaseService> logger, IConfiguration configuration)
 {
-    private readonly string _connectionString = config["SmarterMeter:ConnectionStrings:Postgres"] ?? throw new InvalidOperationException("Postgres connection string not configured");
-    private readonly ILogger<DatabaseService> _logger = logger;
+    /// <summary>
+    /// Connection string
+    /// </summary>
+    private readonly string ConnectionString = configuration["SmarterMeter:ConnectionStrings:Postgres"] ?? throw new InvalidOperationException("Postgres connection string not configured");
+
+    /// <summary>
+    /// Configuration
+    /// </summary>
+    private readonly ILogger<DatabaseService> Logger = logger;
 
     /// <summary>
     /// Opens a connection, executes a query with the given parameters, and returns a data reader.
@@ -22,7 +29,7 @@ public class DatabaseService(ILogger<DatabaseService> logger, IConfiguration con
     /// <param name="parameters">The parameters to bind to the query.</param>
     private async Task<NpgsqlDataReader> ExecuteReaderAsync(string sql, params NpgsqlParameter[] parameters)
     {
-        NpgsqlConnection conn = new(_connectionString);
+        NpgsqlConnection conn = new(ConnectionString);
         await conn.OpenAsync();
 
         NpgsqlCommand cmd = new(sql, conn);
@@ -39,6 +46,7 @@ public class DatabaseService(ILogger<DatabaseService> logger, IConfiguration con
     /// <returns>The inserted <see cref="MeterReading"/> with id and recorded_at populated.</returns>
     public async Task<MeterReading> InsertReadingAsync(MeterReading reading)
     {
+        // Use parameterized query to prevent SQL injection
         await using NpgsqlDataReader reader = await ExecuteReaderAsync(@"
             INSERT INTO ""Electricity"" (value, raw_text, confidence, image_path, captured_at, recorded_at)
             VALUES (@value, @rawText, @confidence, @imagePath, @capturedAt, NOW())
@@ -50,14 +58,16 @@ public class DatabaseService(ILogger<DatabaseService> logger, IConfiguration con
             new NpgsqlParameter("capturedAt", reading.CapturedAt)
         );
 
+        // Read the generated id and recorded_at timestamp
         await reader.ReadAsync();
 
+        // Populate the reading with the generated values
         reading.Id = reader.GetInt64(0);
         reading.RecordedAt = reader.GetDateTime(1);
+        if (Logger.IsEnabled(LogLevel.Information))
+            Logger.LogInformation("Saved reading {Id}: {Value} kWh", reading.Id, reading.Value);
 
-        if (_logger.IsEnabled(LogLevel.Information))
-            _logger.LogInformation("Saved reading {Id}: {Value} kWh", reading.Id, reading.Value);
-
+        // Return the reading with all properties populated
         return reading;
     }
 
@@ -67,6 +77,7 @@ public class DatabaseService(ILogger<DatabaseService> logger, IConfiguration con
     /// <param name="count">The maximum number of readings to return. Defaults to 48.</param>
     public async Task<IEnumerable<MeterReading>> GetRecentReadingsAsync(int count = 48)
     {
+        // Use parameterized query to prevent SQL injection
         await using NpgsqlDataReader reader = await ExecuteReaderAsync(@"
             SELECT id, value, raw_text, confidence, image_path, captured_at, recorded_at
             FROM ""Electricity""
@@ -75,6 +86,7 @@ public class DatabaseService(ILogger<DatabaseService> logger, IConfiguration con
             new NpgsqlParameter("count", count)
         );
 
+        // Read all results into a list
         List<MeterReading> readings = [];
         while (await reader.ReadAsync())
         {

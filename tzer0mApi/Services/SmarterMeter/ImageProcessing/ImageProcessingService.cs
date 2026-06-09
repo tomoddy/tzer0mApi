@@ -8,10 +8,17 @@ namespace tzer0mApi.Services.SmarterMeter.ImageProcessing;
 /// <remarks>
 /// Initialises the service
 /// </remarks>
-public class ImageProcessingService(ILogger<ImageProcessingService> logger, IConfiguration config)
+public class ImageProcessingService(ILogger<ImageProcessingService> logger, IConfiguration configuration)
 {
-    private readonly ILogger<ImageProcessingService> _logger = logger;
-    private readonly IConfiguration _config = config;
+    /// <summary>
+    /// Logger
+    /// </summary>
+    private readonly ILogger<ImageProcessingService> Logger = logger;
+
+    /// <summary>
+    /// Config
+    /// </summary>
+    private readonly IConfiguration Configuration = configuration;
 
     /// <summary>
     /// Processes raw image bytes through the OpenCV pipeline and returns the preprocessed image as a PNG byte array.
@@ -70,7 +77,7 @@ public class ImageProcessingService(ILogger<ImageProcessingService> logger, ICon
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Image preprocessing failed");
+            Logger.LogError(ex, "Image preprocessing failed");
             return null;
         }
     }
@@ -83,15 +90,15 @@ public class ImageProcessingService(ILogger<ImageProcessingService> logger, ICon
     private Mat ApplyCrop(Mat src)
     {
         // Check if cropping is enabled in configuration
-        bool enabled = _config.GetValue<bool>("SmarterMeter:Crop:Enabled");
+        bool enabled = Configuration.GetValue<bool>("SmarterMeter:Crop:Enabled");
         if (!enabled)
             return src.Clone();
 
         // Get cropping parameters from configuration
-        int x = _config.GetValue<int>("SmarterMeter:Crop:X");
-        int y = _config.GetValue<int>("SmarterMeter:Crop:Y");
-        int w = _config.GetValue<int>("SmarterMeter:Crop:Width");
-        int h = _config.GetValue<int>("SmarterMeter:Crop:Height");
+        int x = Configuration.GetValue<int>("SmarterMeter:Crop:X");
+        int y = Configuration.GetValue<int>("SmarterMeter:Crop:Y");
+        int w = Configuration.GetValue<int>("SmarterMeter:Crop:Width");
+        int h = Configuration.GetValue<int>("SmarterMeter:Crop:Height");
 
         // Clamp to image bounds to avoid out-of-range errors
         Rect roi = new(Math.Max(0, x), Math.Max(0, y), Math.Min(w, src.Width - x), Math.Min(h, src.Height - y));

@@ -13,7 +13,10 @@ namespace tzer0mApi.Controllers;
 [Route("SmarterMeter")]
 public class MeterController(ImageProcessingService imagingService, VisionService visionService, DatabaseService databaseService, ILogger<MeterController> logger, IConfiguration config) : ControllerBase
 {
-    private readonly string _capturePath = config["SmarterMeter:Storage:CapturePath"] ?? throw new InvalidOperationException("SmarterMeter:Storage:CapturePath is not configured");
+    /// <summary>
+    /// Image capture path
+    /// </summary>
+    private readonly string CapturePath = config["SmarterMeter:Storage:CapturePath"] ?? throw new InvalidOperationException("SmarterMeter:Storage:CapturePath is not configured");
 
     /// <summary>
     /// Accepts a filename, reads the image from the NAS, runs OCR, and stores the result.
@@ -30,7 +33,7 @@ public class MeterController(ImageProcessingService imagingService, VisionServic
 
         // Prevent path traversal attacks
         string safeFilename = Path.GetFileName(filename);
-        string imagePath = Path.Combine(_capturePath, safeFilename);
+        string imagePath = Path.Combine(CapturePath, safeFilename);
 
         // Check if file exists
         if (!System.IO.File.Exists(imagePath))
