@@ -1,7 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using tzer0mApi.Models;
 using tzer0mApi.Services.SmarterMeter;
-using tzer0mApi.Services.SmarterMeter.ImageProcessing;
 using System.Globalization;
 
 namespace tzer0mApi.Controllers;
@@ -11,10 +10,10 @@ namespace tzer0mApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("SmarterMeter")]
-public class MeterController(ImageProcessingService imagingService, VisionService visionService, DatabaseService databaseService, ILogger<MeterController> logger, IConfiguration config) : ControllerBase
+public class MeterController(VisionService visionService, DatabaseService databaseService, ILogger<MeterController> logger, IConfiguration config) : ControllerBase
 {
     /// <summary>
-    /// Image capture path
+    /// Image capture path.
     /// </summary>
     private readonly string CapturePath = config["SmarterMeter:Storage:CapturePath"] ?? throw new InvalidOperationException("SmarterMeter:Storage:CapturePath is not configured");
 
@@ -27,7 +26,6 @@ public class MeterController(ImageProcessingService imagingService, VisionServic
     [HttpPost("Reading", Name = "Submit Reading")]
     public async Task<IActionResult> SubmitReading([FromQuery] string filename, [FromQuery] DateTime? capturedAt)
     {
-        // Check filename
         if (string.IsNullOrWhiteSpace(filename))
             return BadRequest(new { error = "No filename provided" });
 
@@ -35,20 +33,14 @@ public class MeterController(ImageProcessingService imagingService, VisionServic
         string safeFilename = Path.GetFileName(filename);
         string imagePath = Path.Combine(CapturePath, safeFilename);
 
-        // Check if file exists
         if (!System.IO.File.Exists(imagePath))
             return NotFound(new { error = $"File not found: {safeFilename}" });
 
-        // Read image bytes from NAS
+        // Read raw image bytes from NAS
         byte[] imageBytes = await System.IO.File.ReadAllBytesAsync(imagePath);
 
-        // Preprocess image with OpenCV
-        byte[]? processedBytes = imagingService.PreprocessImage(imageBytes);
-        if (processedBytes is null)
-            return UnprocessableEntity(new { error = "Image preprocessing failed" });
-
-        // Send to Google Cloud Vision
-        string? rawText = await visionService.DetectTextAsync(processedBytes);
+        // Send directly to Google Cloud Vision
+        string? rawText = await visionService.DetectTextAsync(imageBytes);
         if (string.IsNullOrWhiteSpace(rawText))
             return UnprocessableEntity(new { error = "Vision API returned no text" });
 
@@ -57,7 +49,6 @@ public class MeterController(ImageProcessingService imagingService, VisionServic
         if (logger.IsEnabled(LogLevel.Information))
             logger.LogInformation("Digits extracted: '{Digits}'", digitsOnly);
 
-        // Try to parse the digits as a number
         if (!decimal.TryParse(digitsOnly, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal value))
             return UnprocessableEntity(new { error = $"Could not parse '{rawText}' as a number" });
 
