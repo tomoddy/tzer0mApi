@@ -55,15 +55,28 @@ public class VisionService(ILogger<VisionService> logger, IConfiguration configu
         string responseJson = await response.Content.ReadAsStringAsync();
         using JsonDocument doc = JsonDocument.Parse(responseJson);
 
-        // Extract the full text annotation which gives the cleanest single string
+        // Index 0 is the full text, individual blocks start at index 1
         JsonElement root = doc.RootElement;
-        string? text = root.GetProperty("responses")[0].GetProperty("fullTextAnnotation").GetProperty("text").GetString();
+        JsonElement annotations = root.GetProperty("responses")[0].GetProperty("textAnnotations");
 
-        // Log the raw text for debugging
-        if (logger.IsEnabled(LogLevel.Information))
-            logger.LogInformation("Vision API raw result: '{Text}'", text);
+        // Find kWh block and take the two blocks before it
+        string? text = null;
+        int length = annotations.GetArrayLength();
+        for (int i = 2; i < length; i++)
+        {
+            string? blockText = annotations[i].GetProperty("description").GetString();
+            if (blockText?.Equals("kWh", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                string? part1 = annotations[i - 2].GetProperty("description").GetString();
+                string? part2 = annotations[i - 1].GetProperty("description").GetString();
+                text = $"{part1}{part2}";
+                break;
+            }
+        }
 
         // Return text
+        if (logger.IsEnabled(LogLevel.Information))
+            logger.LogInformation("Vision API meter value: '{Text}'", text);
         return text;
     }
 }
