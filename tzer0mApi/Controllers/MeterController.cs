@@ -49,8 +49,18 @@ public class MeterController(VisionService visionService, DatabaseService databa
         if (logger.IsEnabled(LogLevel.Information))
             logger.LogInformation("Digits extracted: '{Digits}'", digitsOnly);
 
+        // Parse the first 5-digit number from the detected text
         if (!decimal.TryParse(digitsOnly, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal value))
             return UnprocessableEntity(new { error = $"Could not parse '{rawText}' as a number" });
+
+        // Validate reading is greater than the last recorded value
+        MeterReading? lastReading = (await databaseService.GetRecentReadingsAsync(1)).FirstOrDefault();
+        if (lastReading != null && value <= lastReading.Value)
+        {
+            if (logger.IsEnabled(LogLevel.Warning))
+                logger.LogWarning("Reading {Value} is not greater than last reading {LastValue} — discarding", value, lastReading.Value);
+            return UnprocessableEntity(new { error = $"Reading {value} is not greater than last reading {lastReading.Value}" });
+        }
 
         // Persist to database
         MeterReading reading = await databaseService.InsertReadingAsync(new MeterReading
