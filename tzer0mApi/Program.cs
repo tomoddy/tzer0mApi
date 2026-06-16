@@ -1,6 +1,8 @@
+using Microsoft.EntityFrameworkCore;
 using tzer0mApi.Services.Keys;
 using tzer0mApi.Services.Middleware;
 using tzer0mApi.Services.SmarterMeter;
+using tzer0mApi.Services.StockWise;
 using tzer0mApi.Services.Ting;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
@@ -13,6 +15,7 @@ builder.Services.AddScoped<TingService>();
 builder.Services.AddHttpClient<VisionService>();
 builder.Services.AddSingleton<DatabaseService>();
 builder.Services.AddScoped<KeysService>();
+builder.Services.AddDbContext<StockWiseDbContext>(options => options.UseNpgsql(builder.Configuration.GetConnectionString("StockWise")));
 
 // Build app
 WebApplication app = builder.Build();
