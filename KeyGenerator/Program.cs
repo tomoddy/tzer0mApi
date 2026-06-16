@@ -17,7 +17,7 @@ internal class Program
 
         // Load configuration
         IConfiguration configuration = new ConfigurationBuilder().AddJsonFile("appsettings.json", optional: false).Build();
-        string connectionString = configuration.GetConnectionString("Postgres") ?? throw new InvalidOperationException("Postgres connection string not configured");
+        string connectionString = configuration.GetConnectionString("Robert1") ?? throw new InvalidOperationException("Robert1 connection string not configured");
 
         // Generate key
         Console.WriteLine("Generating key...");

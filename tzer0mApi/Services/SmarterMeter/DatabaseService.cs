@@ -14,7 +14,7 @@ public class DatabaseService(ILogger<DatabaseService> logger, IConfiguration con
     /// <summary>
     /// Connection string
     /// </summary>
-    private readonly string ConnectionString = configuration["SmarterMeter:ConnectionStrings:Postgres"] ?? throw new InvalidOperationException("Postgres connection string not configured");
+    private readonly string ConnectionString = configuration.GetConnectionString("SmarterMeter") ?? throw new InvalidOperationException("SmarterMeter connection string not configured");
 
     /// <summary>
     /// Configuration

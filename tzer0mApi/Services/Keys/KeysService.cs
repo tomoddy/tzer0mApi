@@ -10,7 +10,7 @@ public class KeysService(IConfiguration configuration)
     /// <summary>
     /// Database connection string
     /// </summary>
-    private readonly string ConnectionString = configuration.GetConnectionString("Postgres") ?? throw new InvalidOperationException("Postgres connection string not configured");
+    private readonly string ConnectionString = configuration.GetConnectionString("Robert1") ?? throw new InvalidOperationException("Robert1 connection string not configured");
 
     /// <summary>
     /// Checks if the given hashed key exists and is active in the database.
