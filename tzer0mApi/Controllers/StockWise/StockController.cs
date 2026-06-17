@@ -173,7 +173,7 @@ public class StockController(StockWiseDbContext db) : ControllerBase
     /// </summary>
     /// <param name="id">The stock entry to open.</param>
     /// <param name="request">The new location and expiry for the opened unit.</param>
-    [HttpPatch("{id}/OpenTo")]
+    [HttpPatch("{id:int}/OpenTo")]
     public async Task<IActionResult> OpenTo(int id, OpenStockDTO request)
     {
         Stock? stock = await db.Stock

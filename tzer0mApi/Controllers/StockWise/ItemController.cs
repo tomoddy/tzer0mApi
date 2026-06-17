@@ -30,7 +30,8 @@ public class ItemsController(StockWiseDbContext db) : ControllerBase
             Name = x.StorageCategory.Name,
             AllowedWhenUnopened = x.AllowedWhenUnopened,
             AllowedWhenOpened = x.AllowedWhenOpened
-        })]
+        })],
+        IsOpenable = item.IsOpenable
     };
 
     /// <summary>
@@ -109,7 +110,8 @@ public class ItemsController(StockWiseDbContext db) : ControllerBase
             Barcode = request.Barcode,
             Name = request.Name,
             ImageUrl = request.ImageUrl,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            IsOpenable = request.IsOpenable
         };
 
         db.Items.Add(item);
