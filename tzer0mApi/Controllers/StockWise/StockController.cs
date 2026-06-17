@@ -56,7 +56,7 @@ public class StockController(StockWiseDbContext db) : ControllerBase
         if (expiresBefore.HasValue)
             query = query.Where(x => x.Expiry.HasValue && x.Expiry <= expiresBefore);
 
-        List<Stock> stock = await query.OrderBy(x => x.Expiry == null).OrderBy(x => x.Expiry).ToListAsync();
+        List<Stock> stock = await query.OrderBy(x => x.Expiry == null).ThenBy(x => x.Expiry).ToListAsync();
         return Ok(stock.Select(ToDto));
     }
 
@@ -194,6 +194,39 @@ public class StockController(StockWiseDbContext db) : ControllerBase
         {
             return BadRequest("This item must be moved to a valid location before it can be marked as opened.");
         }
+
+        return Ok(ToDto(stock));
+    }
+
+    /// <summary>
+    /// Checks out one unit of stock, decrementing its quantity.
+    /// If the quantity reaches zero, the stock entry is removed entirely.
+    /// </summary>
+    /// <param name="id">The stock entry to check out.</param>
+    [HttpPatch("{id}/Checkout")]
+    public async Task<IActionResult> Checkout(int id)
+    {
+        Stock? stock = await db.Stock
+            .Include(x => x.Item)
+            .Include(x => x.Location)
+            .ThenInclude(x => x.StorageCategory)
+            .FirstOrDefaultAsync(x => x.StockId == id);
+
+        if (stock is null)
+            return NotFound();
+
+        if (stock.Quantity <= 0)
+            return BadRequest("This stock entry has no quantity remaining.");
+
+        if (stock.Quantity == 1)
+        {
+            db.Stock.Remove(stock);
+            await db.SaveChangesAsync();
+            return Ok(new { removed = true });
+        }
+
+        stock.Quantity -= 1;
+        await db.SaveChangesAsync();
 
         return Ok(ToDto(stock));
     }
