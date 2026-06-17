@@ -17,14 +17,14 @@ public class ItemsController(StockWiseDbContext db) : ControllerBase
     /// <summary>
     /// Maps an Item entity to an ItemDto.
     /// </summary>
-    private static ItemDto ToDto(Item item) => new()
+    private static ItemDTO ToDto(Item item) => new()
     {
         ItemId = item.ItemId,
         Barcode = item.Barcode,
         Name = item.Name,
         ImageUrl = item.ImageUrl,
         CreatedAt = item.CreatedAt,
-        AllowedCategories = [.. item.ItemStorageCategories.Select(x => new ItemCategoryDto
+        AllowedCategories = [.. item.ItemStorageCategories.Select(x => new ItemCategoryDTO
         {
             CategoryId = x.CategoryId,
             Name = x.StorageCategory.Name,
@@ -91,7 +91,7 @@ public class ItemsController(StockWiseDbContext db) : ControllerBase
     /// </summary>
     /// <param name="request">The item to add.</param>
     [HttpPost]
-    public async Task<IActionResult> Add(CreateItemDto request)
+    public async Task<IActionResult> Add(CreateItemDTO request)
     {
         if (request.Barcode is not null)
         {

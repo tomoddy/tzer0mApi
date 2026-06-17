@@ -3,7 +3,7 @@
 /// <summary>
 /// Represents a stock entry with full item and location details.
 /// </summary>
-public class StockDto
+public class StockDTO
 {
     /// <summary>
     /// The unique identifier of the stock entry.

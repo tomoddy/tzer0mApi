@@ -4,7 +4,7 @@
 /// Represents the data needed to create a new item, including
 /// which storage categories it is allowed in.
 /// </summary>
-public class CreateItemDto
+public class CreateItemDTO
 {
     /// <summary>
     /// The barcode of the item.

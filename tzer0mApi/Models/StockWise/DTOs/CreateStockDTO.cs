@@ -3,7 +3,7 @@
 /// <summary>
 /// Represents the data needed to create a new stock entry.
 /// </summary>
-public class CreateStockDto
+public class CreateStockDTO
 {
     /// <summary>
     /// The identifier of the item this stock entry refers to.

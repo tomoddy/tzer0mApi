@@ -3,7 +3,7 @@
 /// <summary>
 /// Represents a storage category with its locations.
 /// </summary>
-public class StorageCategoryDto
+public class StorageCategoryDTO
 {
     /// <summary>
     /// The unique identifier of the category.
@@ -18,5 +18,5 @@ public class StorageCategoryDto
     /// <summary>
     /// The locations that belong to this category.
     /// </summary>
-    public List<LocationDto> Locations { get; set; } = [];
+    public List<LocationDTO> Locations { get; set; } = [];
 }

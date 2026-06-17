@@ -17,7 +17,7 @@ public class StockController(StockWiseDbContext db) : ControllerBase
     /// <summary>
     /// Maps a Stock entity to a StockDto.
     /// </summary>
-    private static StockDto ToDto(Stock stock) => new()
+    private static StockDTO ToDto(Stock stock) => new()
     {
         StockId = stock.StockId,
         ItemId = stock.ItemId,
@@ -83,20 +83,33 @@ public class StockController(StockWiseDbContext db) : ControllerBase
     /// Adds a new stock entry.
     /// Location validity is enforced by the database trigger.
     /// </summary>
-    /// <param name="stock">The stock entry to add.</param>
+    /// <param name="Stock">The stock entry to add.</param>
     [HttpPost]
-    public async Task<IActionResult> Add(CreateStockDto request)
+    public async Task<IActionResult> Add(CreateStockDTO request)
     {
-        Stock stock = new()
-        {
-            ItemId = request.ItemId,
-            LocationId = request.LocationId,
-            Quantity = request.Quantity,
-            Expiry = request.Expiry,
-            AddedAt = DateTime.UtcNow
-        };
+        Stock? existing = await db.Stock.FirstOrDefaultAsync(x =>
+            x.ItemId == request.ItemId
+            && x.LocationId == request.LocationId
+            && x.Expiry == request.Expiry
+            && x.OpenedAt == null);
 
-        db.Stock.Add(stock);
+        if (existing is not null)
+        {
+            existing.Quantity += request.Quantity;
+        }
+        else
+        {
+            existing = new Stock
+            {
+                ItemId = request.ItemId,
+                LocationId = request.LocationId,
+                Quantity = request.Quantity,
+                Expiry = request.Expiry,
+                AddedAt = DateTime.UtcNow
+            };
+
+            db.Stock.Add(existing);
+        }
 
         try
         {
@@ -111,9 +124,9 @@ public class StockController(StockWiseDbContext db) : ControllerBase
             .Include(x => x.Item)
             .Include(x => x.Location)
             .ThenInclude(x => x.StorageCategory)
-            .FirstAsync(x => x.StockId == stock.StockId);
+            .FirstAsync(x => x.StockId == existing.StockId);
 
-        return CreatedAtAction(nameof(GetById), new { id = stock.StockId }, ToDto(created));
+        return CreatedAtAction(nameof(GetById), new { id = existing.StockId }, ToDto(created));
     }
 
     /// <summary>

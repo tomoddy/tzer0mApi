@@ -3,7 +3,7 @@
 /// <summary>
 /// Represents a location within a storage category.
 /// </summary>
-public class LocationDto
+public class LocationDTO
 {
     /// <summary>
     /// The unique identifier of the location.

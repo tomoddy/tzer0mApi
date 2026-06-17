@@ -3,7 +3,7 @@
 /// <summary>
 /// Represents an item in the catalogue with its allowed storage categories.
 /// </summary>
-public class ItemDto
+public class ItemDTO
 {
     /// <summary>
     /// The unique identifier of the item.
@@ -33,5 +33,5 @@ public class ItemDto
     /// <summary>
     /// The storage categories this item is allowed in.
     /// </summary>
-    public List<ItemCategoryDto> AllowedCategories { get; set; } = [];
+    public List<ItemCategoryDTO> AllowedCategories { get; set; } = [];
 }

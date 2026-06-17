@@ -4,7 +4,7 @@
 /// Represents a storage category allowed for an item,
 /// including the opened/unopened rules.
 /// </summary>
-public class ItemCategoryDto
+public class ItemCategoryDTO
 {
     /// <summary>
     /// The unique identifier of the category.

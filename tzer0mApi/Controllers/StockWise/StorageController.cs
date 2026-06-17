@@ -17,7 +17,7 @@ public class StorageController(StockWiseDbContext db) : ControllerBase
     /// <summary>
     /// Maps a StorageCategory entity to a StorageCategoryDto.
     /// </summary>
-    private static StorageCategoryDto ToDto(StorageCategory category) => new()
+    private static StorageCategoryDTO ToDto(StorageCategory category) => new()
     {
         CategoryId = category.CategoryId,
         Name = category.Name,
@@ -27,7 +27,7 @@ public class StorageController(StockWiseDbContext db) : ControllerBase
     /// <summary>
     /// Maps a Location entity to a LocationDto.
     /// </summary>
-    private static LocationDto ToDto(Location location) => new()
+    private static LocationDTO ToDto(Location location) => new()
     {
         LocationId = location.LocationId,
         Name = location.Name,
