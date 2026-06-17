@@ -34,4 +34,10 @@ public class ItemDTO
     /// The storage categories this item is allowed in.
     /// </summary>
     public List<ItemCategoryDTO> AllowedCategories { get; set; } = [];
+
+    /// <summary>
+    /// Whether this item has a distinct "opened" state that affects
+    /// storage location and expiry once opened.
+    /// </summary>
+    public bool IsOpenable { get; set; }
 }

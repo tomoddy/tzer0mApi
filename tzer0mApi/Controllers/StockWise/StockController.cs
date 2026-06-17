@@ -168,34 +168,60 @@ public class StockController(StockWiseDbContext db) : ControllerBase
     }
 
     /// <summary>
-    /// Marks a stock entry as opened by setting OpenedAt to now.
-    /// If the item's open storage rules differ, the location may need updating.
+    /// Opens one unit of a sealed stock entry, moving it to a new
+    /// location with a new expiry and marking it as opened.
     /// </summary>
-    /// <param name="id">The ID of the stock entry to mark as opened.</param>
-    [HttpPatch("{id:int}/Open")]
-    public async Task<IActionResult> Open(int id)
+    /// <param name="id">The stock entry to open.</param>
+    /// <param name="request">The new location and expiry for the opened unit.</param>
+    [HttpPatch("{id}/OpenTo")]
+    public async Task<IActionResult> OpenTo(int id, OpenStockDTO request)
     {
         Stock? stock = await db.Stock
             .Include(x => x.Item)
-            .Include(x => x.Location)
-            .ThenInclude(x => x.StorageCategory)
             .FirstOrDefaultAsync(x => x.StockId == id);
 
         if (stock is null)
             return NotFound();
 
-        stock.OpenedAt = DateTime.UtcNow;
+        if (stock.OpenedAt is not null)
+            return BadRequest("This stock entry has already been opened.");
+
+        if (stock.Quantity <= 0)
+            return BadRequest("This stock entry has no quantity remaining.");
+
+        if (stock.Quantity == 1)
+            db.Stock.Remove(stock);
+        else
+            stock.Quantity -= 1;
+
+        Stock opened = new()
+        {
+            ItemId = stock.ItemId,
+            LocationId = request.LocationId,
+            Quantity = 1,
+            Expiry = request.Expiry,
+            AddedAt = stock.AddedAt,
+            OpenedAt = DateTime.UtcNow
+        };
+
+        db.Stock.Add(opened);
 
         try
         {
             await db.SaveChangesAsync();
         }
-        catch (Exception ex) when (ex.InnerException?.Message.Contains("not a valid storage option") == true)
+        catch (DbUpdateException)
         {
-            return BadRequest("This item must be moved to a valid location before it can be marked as opened.");
+            return BadRequest("The selected location is not valid for this item when opened.");
         }
 
-        return Ok(ToDto(stock));
+        Stock created = await db.Stock
+            .Include(x => x.Item)
+            .Include(x => x.Location)
+            .ThenInclude(x => x.StorageCategory)
+            .FirstAsync(x => x.StockId == opened.StockId);
+
+        return Ok(ToDto(created));
     }
 
     /// <summary>

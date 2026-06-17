@@ -49,4 +49,10 @@ public class Item
     /// The stock entries for this item.
     /// </summary>
     public ICollection<Stock> Stock { get; set; } = [];
+
+    /// <summary>
+    /// Whether this item has a distinct "opened" state that affects
+    /// storage location and expiry once opened.
+    /// </summary>
+    public bool IsOpenable { get; set; }
 }

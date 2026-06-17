@@ -25,4 +25,10 @@ public class CreateItemDTO
     /// The IDs of the storage categories this item is allowed in.
     /// </summary>
     public List<int> AllowedCategoryIds { get; set; } = [];
+
+    /// <summary>
+    /// Whether this item has a distinct "opened" state that affects
+    /// storage location and expiry once opened.
+    /// </summary>
+    public bool IsOpenable { get; set; }
 }
