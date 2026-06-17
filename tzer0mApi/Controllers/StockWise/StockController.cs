@@ -56,7 +56,7 @@ public class StockController(StockWiseDbContext db) : ControllerBase
         if (expiresBefore.HasValue)
             query = query.Where(x => x.Expiry.HasValue && x.Expiry <= expiresBefore);
 
-        List<Stock> stock = await query.OrderBy(x => x.Expiry).ToListAsync();
+        List<Stock> stock = await query.OrderBy(x => x.Expiry == null).OrderBy(x => x.Expiry).ToListAsync();
         return Ok(stock.Select(ToDto));
     }
 
