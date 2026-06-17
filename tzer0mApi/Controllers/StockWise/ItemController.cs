@@ -86,29 +86,54 @@ public class ItemsController(StockWiseDbContext db) : ControllerBase
     }
 
     /// <summary>
-    /// Adds a new item to the catalogue.
+    /// Adds a new item to the catalogue, along with its allowed storage categories.
     /// Returns the existing item if the barcode already exists.
     /// </summary>
-    /// <param name="item">The item to add.</param>
+    /// <param name="request">The item to add.</param>
     [HttpPost]
-    public async Task<IActionResult> Add(Item item)
+    public async Task<IActionResult> Add(CreateItemDto request)
     {
-        if (item.Barcode is not null)
+        if (request.Barcode is not null)
         {
             Item? existing = await db.Items
                 .Include(x => x.ItemStorageCategories)
                 .ThenInclude(x => x.StorageCategory)
-                .FirstOrDefaultAsync(x => x.Barcode == item.Barcode);
+                .FirstOrDefaultAsync(x => x.Barcode == request.Barcode);
 
             if (existing is not null)
                 return Conflict(ToDto(existing));
         }
 
-        item.CreatedAt = DateTime.UtcNow;
+        Item item = new()
+        {
+            Barcode = request.Barcode,
+            Name = request.Name,
+            ImageUrl = request.ImageUrl,
+            CreatedAt = DateTime.UtcNow
+        };
+
         db.Items.Add(item);
         await db.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetById), new { id = item.ItemId }, ToDto(item));
+        foreach (int categoryId in request.AllowedCategoryIds)
+        {
+            db.ItemStorageCategories.Add(new ItemStorageCategory
+            {
+                ItemId = item.ItemId,
+                CategoryId = categoryId,
+                AllowedWhenUnopened = true,
+                AllowedWhenOpened = true
+            });
+        }
+
+        await db.SaveChangesAsync();
+
+        Item created = await db.Items
+            .Include(x => x.ItemStorageCategories)
+            .ThenInclude(x => x.StorageCategory)
+            .FirstAsync(x => x.ItemId == item.ItemId);
+
+        return CreatedAtAction(nameof(GetById), new { id = item.ItemId }, ToDto(created));
     }
 
     /// <summary>
