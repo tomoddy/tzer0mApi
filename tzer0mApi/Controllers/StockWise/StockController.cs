@@ -85,27 +85,35 @@ public class StockController(StockWiseDbContext db) : ControllerBase
     /// </summary>
     /// <param name="stock">The stock entry to add.</param>
     [HttpPost]
-    public async Task<IActionResult> Add(Stock stock)
+    public async Task<IActionResult> Add(CreateStockDto request)
     {
-        stock.AddedAt = DateTime.UtcNow;
+        Stock stock = new()
+        {
+            ItemId = request.ItemId,
+            LocationId = request.LocationId,
+            Quantity = request.Quantity,
+            Expiry = request.Expiry,
+            AddedAt = DateTime.UtcNow
+        };
+
         db.Stock.Add(stock);
 
         try
         {
             await db.SaveChangesAsync();
         }
-        catch (Exception ex) when (ex.InnerException?.Message.Contains("not a valid storage option") == true)
+        catch (DbUpdateException)
         {
             return BadRequest("The selected location is not valid for this item in its current state.");
         }
 
-        Stock? created = await db.Stock
+        Stock created = await db.Stock
             .Include(x => x.Item)
             .Include(x => x.Location)
             .ThenInclude(x => x.StorageCategory)
-            .FirstOrDefaultAsync(x => x.StockId == stock.StockId);
+            .FirstAsync(x => x.StockId == stock.StockId);
 
-        return CreatedAtAction(nameof(GetById), new { id = stock.StockId }, ToDto(created!));
+        return CreatedAtAction(nameof(GetById), new { id = stock.StockId }, ToDto(created));
     }
 
     /// <summary>
