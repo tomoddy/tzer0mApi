@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using tzer0mApi.Models.StockWise;
+using tzer0mApi.Models.StockWise.DTOs;
 using tzer0mApi.Services.StockWise;
 
 namespace tzer0mApi.Controllers.StockWise;
@@ -14,7 +15,27 @@ namespace tzer0mApi.Controllers.StockWise;
 public class StorageController(StockWiseDbContext db) : ControllerBase
 {
     /// <summary>
-    /// Returns all storage categories.
+    /// Maps a StorageCategory entity to a StorageCategoryDto.
+    /// </summary>
+    private static StorageCategoryDto ToDto(StorageCategory category) => new()
+    {
+        CategoryId = category.CategoryId,
+        Name = category.Name,
+        Locations = [.. category.Locations.Select(ToDto)]
+    };
+
+    /// <summary>
+    /// Maps a Location entity to a LocationDto.
+    /// </summary>
+    private static LocationDto ToDto(Location location) => new()
+    {
+        LocationId = location.LocationId,
+        Name = location.Name,
+        CategoryId = location.CategoryId
+    };
+
+    /// <summary>
+    /// Returns all storage categories with their locations.
     /// </summary>
     [HttpGet("Categories")]
     public async Task<IActionResult> GetAllCategories()
@@ -24,7 +45,7 @@ public class StorageController(StockWiseDbContext db) : ControllerBase
             .OrderBy(x => x.Name)
             .ToListAsync();
 
-        return Ok(categories);
+        return Ok(categories.Select(ToDto));
     }
 
     /// <summary>
@@ -41,7 +62,7 @@ public class StorageController(StockWiseDbContext db) : ControllerBase
         if (category is null)
             return NotFound();
 
-        return Ok(category);
+        return Ok(ToDto(category));
     }
 
     /// <summary>
@@ -60,7 +81,7 @@ public class StorageController(StockWiseDbContext db) : ControllerBase
         db.StorageCategories.Add(category);
         await db.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetCategoryById), new { id = category.CategoryId }, category);
+        return CreatedAtAction(nameof(GetCategoryById), new { id = category.CategoryId }, ToDto(category));
     }
 
     /// <summary>
@@ -78,7 +99,7 @@ public class StorageController(StockWiseDbContext db) : ControllerBase
 
         category.Name = updated.Name;
         await db.SaveChangesAsync();
-        return Ok(category);
+        return Ok(ToDto(category));
     }
 
     /// <summary>
@@ -121,7 +142,7 @@ public class StorageController(StockWiseDbContext db) : ControllerBase
             .OrderBy(x => x.Name)
             .ToListAsync();
 
-        return Ok(locations);
+        return Ok(locations.Select(ToDto));
     }
 
     /// <summary>
@@ -138,7 +159,7 @@ public class StorageController(StockWiseDbContext db) : ControllerBase
         if (location is null)
             return NotFound();
 
-        return Ok(location);
+        return Ok(ToDto(location));
     }
 
     /// <summary>
@@ -163,7 +184,7 @@ public class StorageController(StockWiseDbContext db) : ControllerBase
         db.Locations.Add(location);
         await db.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetLocationById), new { id = location.LocationId }, location);
+        return CreatedAtAction(nameof(GetLocationById), new { id = location.LocationId }, ToDto(location));
     }
 
     /// <summary>
@@ -181,7 +202,7 @@ public class StorageController(StockWiseDbContext db) : ControllerBase
 
         location.Name = updated.Name;
         await db.SaveChangesAsync();
-        return Ok(location);
+        return Ok(ToDto(location));
     }
 
     /// <summary>

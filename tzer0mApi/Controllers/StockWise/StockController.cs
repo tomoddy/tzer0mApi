@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using tzer0mApi.Models.StockWise;
+using tzer0mApi.Models.StockWise.DTOs;
 using tzer0mApi.Services.StockWise;
 
 namespace tzer0mApi.Controllers.StockWise;
@@ -13,6 +14,25 @@ namespace tzer0mApi.Controllers.StockWise;
 [Tags("StockWise")]
 public class StockController(StockWiseDbContext db) : ControllerBase
 {
+    /// <summary>
+    /// Maps a Stock entity to a StockDto.
+    /// </summary>
+    private static StockDto ToDto(Stock stock) => new()
+    {
+        StockId = stock.StockId,
+        ItemId = stock.ItemId,
+        ItemName = stock.Item.Name,
+        Barcode = stock.Item.Barcode,
+        Quantity = stock.Quantity,
+        LocationId = stock.LocationId,
+        Location = stock.Location.Name,
+        StorageCategory = stock.Location.StorageCategory.Name,
+        Expiry = stock.Expiry,
+        AddedAt = stock.AddedAt,
+        OpenedAt = stock.OpenedAt,
+        IsOpened = stock.OpenedAt is not null
+    };
+
     /// <summary>
     /// Returns all stock entries, optionally filtered by item, location or expiry date.
     /// </summary>
@@ -36,7 +56,8 @@ public class StockController(StockWiseDbContext db) : ControllerBase
         if (expiresBefore.HasValue)
             query = query.Where(x => x.Expiry.HasValue && x.Expiry <= expiresBefore);
 
-        return Ok(await query.OrderBy(x => x.Expiry).ToListAsync());
+        List<Stock> stock = await query.OrderBy(x => x.Expiry).ToListAsync();
+        return Ok(stock.Select(ToDto));
     }
 
     /// <summary>
@@ -55,7 +76,7 @@ public class StockController(StockWiseDbContext db) : ControllerBase
         if (stock is null)
             return NotFound();
 
-        return Ok(stock);
+        return Ok(ToDto(stock));
     }
 
     /// <summary>
@@ -78,7 +99,13 @@ public class StockController(StockWiseDbContext db) : ControllerBase
             return BadRequest("The selected location is not valid for this item in its current state.");
         }
 
-        return CreatedAtAction(nameof(GetById), new { id = stock.StockId }, stock);
+        Stock? created = await db.Stock
+            .Include(x => x.Item)
+            .Include(x => x.Location)
+            .ThenInclude(x => x.StorageCategory)
+            .FirstOrDefaultAsync(x => x.StockId == stock.StockId);
+
+        return CreatedAtAction(nameof(GetById), new { id = stock.StockId }, ToDto(created!));
     }
 
     /// <summary>
@@ -110,7 +137,13 @@ public class StockController(StockWiseDbContext db) : ControllerBase
             return BadRequest("The selected location is not valid for this item in its current state.");
         }
 
-        return Ok(stock);
+        Stock? full = await db.Stock
+            .Include(x => x.Item)
+            .Include(x => x.Location)
+            .ThenInclude(x => x.StorageCategory)
+            .FirstOrDefaultAsync(x => x.StockId == id);
+
+        return Ok(ToDto(full!));
     }
 
     /// <summary>
@@ -123,7 +156,8 @@ public class StockController(StockWiseDbContext db) : ControllerBase
     {
         Stock? stock = await db.Stock
             .Include(x => x.Item)
-            .ThenInclude(x => x.ItemStorageCategories)
+            .Include(x => x.Location)
+            .ThenInclude(x => x.StorageCategory)
             .FirstOrDefaultAsync(x => x.StockId == id);
 
         if (stock is null)
@@ -140,7 +174,7 @@ public class StockController(StockWiseDbContext db) : ControllerBase
             return BadRequest("This item must be moved to a valid location before it can be marked as opened.");
         }
 
-        return Ok(stock);
+        return Ok(ToDto(stock));
     }
 
     /// <summary>

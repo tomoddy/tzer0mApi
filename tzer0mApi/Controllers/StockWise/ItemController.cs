@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using tzer0mApi.Models.StockWise;
+using tzer0mApi.Models.StockWise.DTOs;
 using tzer0mApi.Services.StockWise;
 
 namespace tzer0mApi.Controllers.StockWise;
@@ -14,6 +15,25 @@ namespace tzer0mApi.Controllers.StockWise;
 public class ItemsController(StockWiseDbContext db) : ControllerBase
 {
     /// <summary>
+    /// Maps an Item entity to an ItemDto.
+    /// </summary>
+    private static ItemDto ToDto(Item item) => new()
+    {
+        ItemId = item.ItemId,
+        Barcode = item.Barcode,
+        Name = item.Name,
+        ImageUrl = item.ImageUrl,
+        CreatedAt = item.CreatedAt,
+        AllowedCategories = [.. item.ItemStorageCategories.Select(x => new ItemCategoryDto
+        {
+            CategoryId = x.CategoryId,
+            Name = x.StorageCategory.Name,
+            AllowedWhenUnopened = x.AllowedWhenUnopened,
+            AllowedWhenOpened = x.AllowedWhenOpened
+        })]
+    };
+
+    /// <summary>
     /// Returns all items in the catalogue.
     /// </summary>
     [HttpGet]
@@ -25,7 +45,7 @@ public class ItemsController(StockWiseDbContext db) : ControllerBase
             .OrderBy(x => x.Name)
             .ToListAsync();
 
-        return Ok(items);
+        return Ok(items.Select(ToDto));
     }
 
     /// <summary>
@@ -43,7 +63,7 @@ public class ItemsController(StockWiseDbContext db) : ControllerBase
         if (item is null)
             return NotFound();
 
-        return Ok(item);
+        return Ok(ToDto(item));
     }
 
     /// <summary>
@@ -62,7 +82,7 @@ public class ItemsController(StockWiseDbContext db) : ControllerBase
         if (item is null)
             return NotFound();
 
-        return Ok(item);
+        return Ok(ToDto(item));
     }
 
     /// <summary>
@@ -81,14 +101,14 @@ public class ItemsController(StockWiseDbContext db) : ControllerBase
                 .FirstOrDefaultAsync(x => x.Barcode == item.Barcode);
 
             if (existing is not null)
-                return Conflict(existing);
+                return Conflict(ToDto(existing));
         }
 
         item.CreatedAt = DateTime.UtcNow;
         db.Items.Add(item);
         await db.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetById), new { id = item.ItemId }, item);
+        return CreatedAtAction(nameof(GetById), new { id = item.ItemId }, ToDto(item));
     }
 
     /// <summary>
@@ -109,7 +129,7 @@ public class ItemsController(StockWiseDbContext db) : ControllerBase
         item.ImageUrl = updated.ImageUrl;
 
         await db.SaveChangesAsync();
-        return Ok(item);
+        return Ok(ToDto(item));
     }
 
     /// <summary>
