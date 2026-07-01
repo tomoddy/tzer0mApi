@@ -18,6 +18,12 @@ public class MeterController(VisionService visionService, DatabaseService databa
     private readonly string CapturePath = config["SmarterMeter:Storage:CapturePath"] ?? throw new InvalidOperationException("SmarterMeter:Storage:CapturePath is not configured");
 
     /// <summary>
+    /// The configured tariff periods.
+    /// </summary>
+    private readonly List<Tariff> Tariffs = config.GetSection("SmarterMeter:Tariffs").Get<List<Tariff>>() ?? throw new InvalidOperationException("SmarterMeter:Tariffs is not configured");
+
+
+    /// <summary>
     /// Accepts a filename, reads the image from the NAS, runs OCR, and stores the result.
     /// </summary>
     /// <param name="filename">The filename of the image on the NAS capture path.</param>
@@ -93,5 +99,14 @@ public class MeterController(VisionService visionService, DatabaseService databa
     {
         IEnumerable<MeterReading> readings = await databaseService.GetRecentReadingsAsync(count);
         return Ok(readings);
+    }
+
+    /// <summary>
+    /// Returns all configured tariff periods.
+    /// </summary>
+    [HttpGet("Tariffs", Name = "Get Tariffs")]
+    public IActionResult GetTariffs()
+    {
+        return Ok(Tariffs);
     }
 }
