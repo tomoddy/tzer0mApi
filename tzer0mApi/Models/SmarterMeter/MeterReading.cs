@@ -1,4 +1,4 @@
-﻿namespace tzer0mApi.Models;
+﻿namespace tzer0mApi.Models.SmarterMeter;
 
 /// <summary>
 /// Represents a single electricity meter reading captured from a photo.

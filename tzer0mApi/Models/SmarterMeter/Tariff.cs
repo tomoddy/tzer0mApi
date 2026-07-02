@@ -1,4 +1,4 @@
-﻿namespace tzer0mApi.Models;
+﻿namespace tzer0mApi.Models.SmarterMeter;
 
 /// <summary>
 /// Represents a tariff period with a fixed unit rate and standing charge,

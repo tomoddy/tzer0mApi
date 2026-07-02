@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using tzer0mApi.Models;
-using tzer0mApi.Services.SmarterMeter;
 using System.Globalization;
+using tzer0mApi.Models.SmarterMeter;
+using tzer0mApi.Services.SmarterMeter;
 
 namespace tzer0mApi.Controllers;
 
@@ -10,7 +10,7 @@ namespace tzer0mApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("SmarterMeter")]
-public class MeterController(VisionService visionService, DatabaseService databaseService, ILogger<MeterController> logger, IConfiguration config) : ControllerBase
+public class MeterController(VisionService visionService, DatabaseService databaseService, ILogger<MeterController> logger, IConfiguration config, CalculationService calculationService) : ControllerBase
 {
     /// <summary>
     /// Image capture path.
@@ -108,5 +108,22 @@ public class MeterController(VisionService visionService, DatabaseService databa
     public IActionResult GetTariffs()
     {
         return Ok(Tariffs);
+    }
+
+    /// <summary>
+    /// Returns a summary of electricity usage and cost for today, last 7 days, and last 30 days.
+    /// </summary>
+    [HttpGet("Summary", Name = "Get Summary")]
+    public async Task<IActionResult> GetSummary()
+    {
+        List<MeterReading> readings = [.. await databaseService.GetRecentReadingsAsync(500)];
+
+        DateTime cutoff = DateTime.UtcNow.AddHours(-200);
+        decimal successRate = Math.Round(
+            Math.Min(readings.Count(r => r.CapturedAt >= cutoff) / 100m * 100m, 100m), 1);
+
+        MeterSummary summary = calculationService.Calculate(readings, successRate);
+
+        return Ok(summary);
     }
 }

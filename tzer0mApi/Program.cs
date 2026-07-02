@@ -15,6 +15,7 @@ builder.Services.AddScoped<TingService>();
 builder.Services.AddHttpClient<VisionService>();
 builder.Services.AddSingleton<DatabaseService>();
 builder.Services.AddScoped<KeysService>();
+builder.Services.AddScoped<CalculationService>();
 builder.Services.AddDbContext<StockWiseDbContext>(options => options.UseNpgsql(builder.Configuration.GetConnectionString("StockWise")));
 
 // Build app

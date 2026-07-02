@@ -1,5 +1,5 @@
 ﻿using Npgsql;
-using tzer0mApi.Models;
+using tzer0mApi.Models.SmarterMeter;
 
 namespace tzer0mApi.Services.SmarterMeter;
 
