@@ -7,6 +7,9 @@ using tzer0mApi.Services.Ting;
 
 namespace tzer0mApi.Controllers
 {
+    /// <summary>
+    /// Handles weather-related operations, including UV index retrieval and forecast data.
+    /// </summary>
     [ApiController]
     [Route("[controller]")]
     public class WeatherController : ControllerBase
@@ -35,6 +38,7 @@ namespace tzer0mApi.Controllers
         /// Default constructor
         /// </summary>
         /// <param name="configuration">Configuration</param>
+        /// <param name="tingService">Ting service</param>
         /// <exception cref="NullReferenceException">Thrown if config values are missing</exception>
         public WeatherController(IConfiguration configuration, TingService tingService)
         {

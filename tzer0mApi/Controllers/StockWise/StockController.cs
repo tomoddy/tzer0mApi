@@ -83,7 +83,7 @@ public class StockController(StockWiseDbContext db) : ControllerBase
     /// Adds a new stock entry.
     /// Location validity is enforced by the database trigger.
     /// </summary>
-    /// <param name="Stock">The stock entry to add.</param>
+    /// <param name="request">The stock entry to add.</param>
     [HttpPost]
     public async Task<IActionResult> Add(CreateStockDTO request)
     {
