@@ -41,6 +41,11 @@ public sealed class MeterSummary
     public decimal MonthCost { get; init; }
 
     /// <summary>
+    /// The UTC timestamp of the most recent meter reading capture.
+    /// </summary>
+    public DateTime LastCapturedAt { get; init; }
+
+    /// <summary>
     /// Reading capture success rate as a percentage.
     /// </summary>
     public decimal SuccessRate { get; init; }

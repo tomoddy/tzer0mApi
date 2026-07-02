@@ -51,6 +51,7 @@ public class CalculationService(IConfiguration config)
             WeekCost = CalculateCostForRange(weekReadings, weekStart, today),
             MonthUsage = monthUsage,
             MonthCost = CalculateCostForRange(monthReadings, monthStart, today),
+            LastCapturedAt = readings.Last().CapturedAt,
             SuccessRate = successRate
         };
     }
