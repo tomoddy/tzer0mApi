@@ -61,11 +61,11 @@ public class MeterController(VisionService visionService, DatabaseService databa
 
         // Validate reading is greater than the last recorded value
         MeterReading? lastReading = (await databaseService.GetRecentReadingsAsync(1)).FirstOrDefault();
-        if (lastReading != null && value < lastReading.Value)
+        if (lastReading != null && (value < lastReading.Value || value > lastReading.Value + 20))
         {
             if (logger.IsEnabled(LogLevel.Warning))
-                logger.LogWarning("Reading {Value} is less than last reading {LastValue} — discarding", value, lastReading.Value);
-            return UnprocessableEntity(new { error = $"Reading {value} is less than than last reading {lastReading.Value}" });
+                logger.LogWarning("Reading {Value} is less than last reading {LastValue} or exceeds the allowed range", value, lastReading.Value);
+            return UnprocessableEntity(new { error = $"Reading {value} is less than last reading {lastReading.Value} or exceeds the allowed range" });
         }
 
         // Persist to database
