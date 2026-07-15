@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json;
+﻿using FirebaseAdmin.Messaging;
+using Newtonsoft.Json;
 
 namespace tzer0mApi.Services.FCM
 {
@@ -21,5 +22,11 @@ namespace tzer0mApi.Services.FCM
         /// </summary>
         [JsonProperty(PropertyName = "token")]
         public string Token { get; set; } = token;
+
+        /// <summary>
+        /// Android-specific delivery options
+        /// </summary>
+        [JsonProperty(PropertyName = "android")]
+        public AndroidConfig Android { get; set; } = new AndroidConfig { Priority = Priority.High };
     }
 }
