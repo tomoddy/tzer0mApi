@@ -10,8 +10,14 @@ namespace tzer0mApi.Services.Ting
     /// <param name="configuration">Configuration</param>
     public class TingService(IConfiguration configuration)
     {
-        // Constants for file paths
+        /// <summary>
+        /// Service account credentials file path
+        /// </summary>
         private const string SERVICE_ACCOUNT_CREDENTIALS = "serviceAccountCredentials.json";
+
+        /// <summary>
+        /// FCM token file path
+        /// </summary>
         private const string FCM_TOKEN_FILE = "Services/FCM/fcmToken.txt";
 
         /// <summary>

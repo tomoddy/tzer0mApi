@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using tzer0mApi.Models.Ting;
 using tzer0mApi.Services.FCM;
 using tzer0mApi.Services.Ting;
 
@@ -39,6 +40,17 @@ namespace tzer0mApi.Controllers
                 System.IO.File.Create(FCM_TOKEN_FILE).Dispose();
 
             System.IO.File.WriteAllText(FCM_TOKEN_FILE, body.FCMToken);
+        }
+
+        /// <summary>
+        /// Receives Uptime Kuma's webhook notification payload and relays it as a Ting push.
+        /// </summary>
+        /// <param name="payload">The webhook payload sent by Kuma on a monitor status change.</param>
+        /// <returns>Task</returns>
+        [HttpPost("Kuma", Name = "Ting Kuma")]
+        public async Task Kuma([FromBody] KumaWebhookPayload payload)
+        {
+            await tingService.Send(payload.Monitor.Name, payload.Msg);
         }
     }
 }
