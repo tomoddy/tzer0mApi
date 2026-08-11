@@ -50,7 +50,8 @@ namespace tzer0mApi.Controllers
         [HttpPost("Kuma", Name = "Ting Kuma")]
         public async Task Kuma([FromBody] KumaWebhookPayload payload)
         {
-            await tingService.Send(payload.Monitor.Name, payload.Msg);
+            string title = payload.Monitor?.Name ?? "Kuma";
+            await tingService.Send(title, payload.Msg);
         }
     }
 }
