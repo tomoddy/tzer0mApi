@@ -17,6 +17,7 @@ builder.Services.AddSingleton<DatabaseService>();
 builder.Services.AddScoped<KeysService>();
 builder.Services.AddScoped<CalculationService>();
 builder.Services.AddDbContext<StockWiseDbContext>(options => options.UseNpgsql(builder.Configuration.GetConnectionString("StockWise")));
+builder.Services.AddHealthChecks().AddNpgSql(builder.Configuration.GetConnectionString("StockWise") ?? throw new InvalidOperationException("Missing StockWise connection string"), name: "stockwise-db");
 
 // Build app
 WebApplication app = builder.Build();
@@ -25,6 +26,7 @@ app.UseSwaggerUI();
 app.MapGet("/", () => Results.Redirect("/swagger", true)).ExcludeFromDescription();
 app.UseHttpsRedirection();
 app.UseAuthorization();
+app.MapHealthChecks("/health").AllowAnonymous();
 app.UseApiKeyMiddleware();
 app.MapControllers();
 app.Run();
