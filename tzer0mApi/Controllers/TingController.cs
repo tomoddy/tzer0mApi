@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using tzer0mApi.Models.Ting;
+using tzer0mApi.Models.Ting.Kuma;
+using tzer0mApi.Models.Ting.Semaphore;
 using tzer0mApi.Services.FCM;
 using tzer0mApi.Services.Ting;
 
@@ -52,6 +53,20 @@ namespace tzer0mApi.Controllers
         {
             string title = payload.Monitor?.Name ?? "Kuma";
             await tingService.Send(title, payload.Msg);
+        }
+
+        /// <summary>
+        /// Receives Semaphore UI's webhook notification payload and relays it as a Ting push.
+        /// </summary>
+        /// <param name="payload">The Slack-formatted webhook payload sent by Semaphore on task completion.</param>
+        /// <returns>Task</returns>
+        [HttpPost("Semaphore", Name = "Ting Semaphore")]
+        public async Task Semaphore([FromBody] SemaphoreWebhookPayload payload)
+        {
+            SemaphoreAttachment? attachment = payload.Attachments?.FirstOrDefault();
+            string title = attachment?.Title ?? "Semaphore";
+            string message = attachment?.Text ?? "no details provided";
+            await tingService.Send(title, message);
         }
     }
 }
