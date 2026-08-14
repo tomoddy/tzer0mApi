@@ -1,6 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using tzer0mApi.Models.Ting.Kuma;
-using tzer0mApi.Models.Ting.Semaphore;
 using tzer0mApi.Services.FCM;
 using tzer0mApi.Services.Ting;
 
