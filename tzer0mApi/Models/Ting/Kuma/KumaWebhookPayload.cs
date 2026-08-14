@@ -1,4 +1,4 @@
-﻿namespace tzer0mApi.Models.Ting;
+﻿namespace tzer0mApi.Models.Ting.Kuma;
 
 /// <summary>
 /// The webhook payload sent by Uptime Kuma when a monitor's status changes.

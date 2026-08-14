@@ -1,4 +1,4 @@
-﻿namespace tzer0mApi.Models.Ting;
+﻿namespace tzer0mApi.Models.Ting.Kuma;
 
 /// <summary>
 /// A single heartbeat check result from Uptime Kuma.

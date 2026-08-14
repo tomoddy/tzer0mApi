@@ -1,4 +1,4 @@
-﻿namespace tzer0mApi.Models.Ting;
+﻿namespace tzer0mApi.Models.Ting.Kuma;
 
 /// <summary>
 /// The monitor configuration associated with a Kuma webhook notification.
