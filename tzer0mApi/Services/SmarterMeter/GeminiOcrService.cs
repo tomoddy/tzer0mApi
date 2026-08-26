@@ -34,13 +34,33 @@ public class GeminiOcrService(HttpClient httpClient, ILogger<GeminiOcrService> l
         string requestUrl = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent";
         GeminiRequest requestBody = new([new([new(InlineData: new GeminiInlineData("image/jpeg", base64Image)), new(Text: Prompt)])]);
 
-        // Retry on transient failures (503 overloaded, 429 rate limited) with exponential backoff, up to maxAttempts total.
+        // Retry on transient failures (503 overloaded, 429 rate limited, or a network-level timeout/hang) with exponential backoff, up to maxAttempts total.
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            // Send the request to the Gemini API, with the key in a header rather than the query string so it doesn't end up in URL-based logging.
-            using HttpRequestMessage request = new(HttpMethod.Post, requestUrl) { Content = JsonContent.Create(requestBody) };
-            request.Headers.Add("x-goog-api-key", apiKey);
-            HttpResponseMessage response = await httpClient.SendAsync(request);
+            HttpResponseMessage response;
+            try
+            {
+                // Send the request to the Gemini API, with the key in a header rather than the query string so it doesn't end up in URL-based logging.
+                using HttpRequestMessage request = new(HttpMethod.Post, requestUrl) { Content = JsonContent.Create(requestBody) };
+                request.Headers.Add("x-goog-api-key", apiKey);
+                response = await httpClient.SendAsync(request);
+            }
+            catch (Exception ex) when (ex is TaskCanceledException or HttpRequestException or IOException)
+            {
+                // The connection itself timed out or failed before we got any response - treat this the same as a retryable server error.
+                bool isLastAttemptAfterException = attempt == maxAttempts;
+                if (logger.IsEnabled(LogLevel.Warning))
+                    logger.LogWarning(ex, "Gemini API request failed on attempt {Attempt}/{MaxAttempts}", attempt, maxAttempts);
+
+                // If this was the last attempt, give up and return null.
+                if (isLastAttemptAfterException)
+                    return null;
+
+                // Wait with exponential backoff before the next attempt.
+                int exceptionBackoffSeconds = baseBackoffSeconds * (int)Math.Pow(2, attempt - 1);
+                await Task.Delay(TimeSpan.FromSeconds(exceptionBackoffSeconds));
+                continue;
+            }
 
             // Check for success.
             if (response.IsSuccessStatusCode)
