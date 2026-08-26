@@ -12,7 +12,7 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<TingService>();
-builder.Services.AddHttpClient<VisionService>();
+builder.Services.AddHttpClient<GeminiOcrService>();
 builder.Services.AddSingleton<DatabaseService>();
 builder.Services.AddScoped<KeysService>();
 builder.Services.AddScoped<CalculationService>();

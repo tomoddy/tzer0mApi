@@ -8,9 +8,14 @@ namespace tzer0mApi.Controllers;
 /// <summary>
 /// Handles incoming meter image submissions and reading retrieval.
 /// </summary>
+/// <param name="geminiOcrService">The service used to perform OCR on meter images.</param>
+/// <param name="databaseService">The service used to interact with the database.</param>
+/// <param name="logger">The logger instance.</param>
+/// <param name="config">The configuration instance.</param>
+/// <param name="calculationService">The service used to perform calculations on meter readings.</param>
 [ApiController]
 [Route("SmarterMeter")]
-public class MeterController(VisionService visionService, DatabaseService databaseService, ILogger<MeterController> logger, IConfiguration config, CalculationService calculationService) : ControllerBase
+public class MeterController(GeminiOcrService geminiOcrService, DatabaseService databaseService, ILogger<MeterController> logger, IConfiguration config, CalculationService calculationService) : ControllerBase
 {
     /// <summary>
     /// Image capture path.
@@ -21,7 +26,6 @@ public class MeterController(VisionService visionService, DatabaseService databa
     /// The configured tariff periods.
     /// </summary>
     private readonly List<Tariff> Tariffs = config.GetSection("SmarterMeter:Tariffs").Get<List<Tariff>>() ?? throw new InvalidOperationException("SmarterMeter:Tariffs is not configured");
-
 
     /// <summary>
     /// Accepts a filename, reads the image from the NAS, runs OCR, and stores the result.
@@ -46,9 +50,9 @@ public class MeterController(VisionService visionService, DatabaseService databa
         byte[] imageBytes = await System.IO.File.ReadAllBytesAsync(imagePath);
 
         // Send directly to Google Cloud Vision
-        string? rawText = await visionService.DetectTextAsync(imageBytes);
+        string? rawText = await geminiOcrService.DetectTextAsync(imageBytes);
         if (string.IsNullOrWhiteSpace(rawText))
-            return UnprocessableEntity(new { error = "Vision API returned no text" });
+            return UnprocessableEntity(new { error = "OCR returned no text" });
 
         // Strip anything that isn't a digit
         string digitsOnly = new([.. rawText.Where(char.IsDigit)]);
@@ -117,13 +121,9 @@ public class MeterController(VisionService visionService, DatabaseService databa
     public async Task<IActionResult> GetSummary()
     {
         List<MeterReading> readings = [.. await databaseService.GetRecentReadingsAsync(500)];
-
         DateTime cutoff = DateTime.UtcNow.AddHours(-200);
-        decimal successRate = Math.Round(
-            Math.Min(readings.Count(r => r.CapturedAt >= cutoff) / 100m * 100m, 100m), 1);
-
+        decimal successRate = Math.Round(Math.Min(readings.Count(r => r.CapturedAt >= cutoff) / 100m * 100m, 100m), 1);
         MeterSummary summary = calculationService.Calculate(readings, successRate);
-
         return Ok(summary);
     }
 }
