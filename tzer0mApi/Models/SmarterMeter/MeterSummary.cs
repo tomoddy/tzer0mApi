@@ -49,4 +49,9 @@ public sealed class MeterSummary
     /// Reading capture success rate as a percentage.
     /// </summary>
     public decimal SuccessRate { get; init; }
+
+    /// <summary>
+    /// Number of hours between scheduled captures, used by consumers to size lookback windows and thresholds.
+    /// </summary>
+    public int CaptureIntervalHours { get; init; }
 }

@@ -17,11 +17,12 @@ public class CalculationService(IConfiguration config)
     /// </summary>
     /// <param name="readings">All available meter readings, in any order.</param>
     /// <param name="successRate">Pre-calculated reading success rate percentage.</param>
-    public MeterSummary Calculate(List<MeterReading> readings, decimal successRate)
+    /// <param name="captureIntervalHours">Number of hours between scheduled captures.</param>
+    public MeterSummary Calculate(List<MeterReading> readings, decimal successRate, int captureIntervalHours)
     {
         // Return empty summary if no readings are available
         if (readings.Count == 0)
-            return new MeterSummary();
+            return new MeterSummary { CaptureIntervalHours = captureIntervalHours };
 
         // Sort readings by timestamp, most recent first
         readings = [.. readings.OrderBy(r => r.CapturedAt)];
@@ -52,7 +53,8 @@ public class CalculationService(IConfiguration config)
             MonthUsage = monthUsage,
             MonthCost = CalculateCostForRange(monthReadings, monthStart, today),
             LastCapturedAt = readings.Last().CapturedAt,
-            SuccessRate = successRate
+            SuccessRate = successRate,
+            CaptureIntervalHours = captureIntervalHours
         };
     }
 

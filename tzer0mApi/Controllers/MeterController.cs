@@ -120,10 +120,16 @@ public class MeterController(GeminiOcrService geminiOcrService, DatabaseService 
     [HttpGet("Summary", Name = "Get Summary")]
     public async Task<IActionResult> GetSummary()
     {
+        // Capture interval, and the lookback window sized to cover 100 expected readings at that interval.
+        int captureIntervalHours = config.GetValue<int?>("SmarterMeter:CaptureIntervalHours") ?? 1;
+        const int ExpectedReadings = 100;
+        int lookbackHours = ExpectedReadings * captureIntervalHours;
+
+        // Retrieve the most recent readings and calculate the success rate based on the expected number of readings in the lookback period.
         List<MeterReading> readings = [.. await databaseService.GetRecentReadingsAsync(500)];
-        DateTime cutoff = DateTime.UtcNow.AddHours(-200);
-        decimal successRate = Math.Round(Math.Min(readings.Count(r => r.CapturedAt >= cutoff) / 100m * 100m, 100m), 1);
-        MeterSummary summary = calculationService.Calculate(readings, successRate);
+        DateTime cutoff = DateTime.UtcNow.AddHours(-lookbackHours);
+        decimal successRate = Math.Round(Math.Min(readings.Count(r => r.CapturedAt >= cutoff) / (decimal)ExpectedReadings * 100m, 100m), 1);
+        MeterSummary summary = calculationService.Calculate(readings, successRate, captureIntervalHours);
         return Ok(summary);
     }
 }
