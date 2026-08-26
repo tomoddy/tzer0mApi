@@ -1,4 +1,5 @@
-﻿using System.Net.Http.Json;
+﻿using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 
 namespace tzer0mApi.Services.SmarterMeter;
@@ -24,33 +25,56 @@ public class GeminiOcrService(HttpClient httpClient, ILogger<GeminiOcrService> l
         string apiKey = configuration["SmarterMeter:Gemini:ApiKey"] ?? throw new InvalidOperationException("Gemini:ApiKey is not configured");
         string model = configuration["SmarterMeter:Gemini:Model"] ?? "gemini-flash-lite-latest";
 
+        // Retrieve retry settings from configuration, defaulting to 4 attempts with a 5 second base backoff if not specified.
+        int maxAttempts = configuration.GetValue<int?>("SmarterMeter:Gemini:MaxAttempts") ?? 4;
+        int baseBackoffSeconds = configuration.GetValue<int?>("SmarterMeter:Gemini:BaseBackoffSeconds") ?? 5;
+
         // Convert the image bytes to a base64 string for inclusion in the request body and construct the request.
         string base64Image = Convert.ToBase64String(imageBytes);
         string requestUrl = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent";
         GeminiRequest requestBody = new([new([new(InlineData: new GeminiInlineData("image/jpeg", base64Image)), new(Text: Prompt)])]);
 
-        // Send the request to the Gemini API, with the key in a header rather than the query string so it doesn't end up in URL-based logging.
-        using HttpRequestMessage request = new(HttpMethod.Post, requestUrl) { Content = JsonContent.Create(requestBody) };
-        request.Headers.Add("x-goog-api-key", apiKey);
-        HttpResponseMessage response = await httpClient.SendAsync(request);
-        if (!response.IsSuccessStatusCode)
+        // Retry on transient failures (503 overloaded, 429 rate limited) with exponential backoff, up to maxAttempts total.
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
+            // Send the request to the Gemini API, with the key in a header rather than the query string so it doesn't end up in URL-based logging.
+            using HttpRequestMessage request = new(HttpMethod.Post, requestUrl) { Content = JsonContent.Create(requestBody) };
+            request.Headers.Add("x-goog-api-key", apiKey);
+            HttpResponseMessage response = await httpClient.SendAsync(request);
+
+            // Check for success.
+            if (response.IsSuccessStatusCode)
+            {
+                // Parse the response JSON into our GeminiResponse record and extract the text from the first candidate's first part.
+                GeminiResponse? parsed = await response.Content.ReadFromJsonAsync<GeminiResponse>();
+                string? text = parsed?.Candidates?.FirstOrDefault()?.Content?.Parts?.FirstOrDefault()?.Text?.Trim();
+
+                // If the text is null, empty, whitespace, or "NO_READING", return null.
+                if (string.IsNullOrWhiteSpace(text) || text == "NO_READING")
+                    return null;
+
+                // Return the extracted text.
+                return text;
+            }
+
+            // If we reach here, the request failed. Log the error and determine whether to retry.
             string errorBody = await response.Content.ReadAsStringAsync();
+            bool isRetryable = response.StatusCode is HttpStatusCode.ServiceUnavailable or HttpStatusCode.TooManyRequests;
+            bool isLastAttempt = attempt == maxAttempts;
             if (logger.IsEnabled(LogLevel.Warning))
-                logger.LogWarning("Gemini API returned {StatusCode}: {ErrorBody}", response.StatusCode, errorBody);
-            return null;
+                logger.LogWarning("Gemini API returned {StatusCode} on attempt {Attempt}/{MaxAttempts}: {ErrorBody}", response.StatusCode, attempt, maxAttempts, errorBody);
+
+            // Give up immediately on a non-retryable error, or once the last attempt has been used.
+            if (!isRetryable || isLastAttempt)
+                return null;
+
+            // Wait with exponential backoff before the next attempt.
+            int backoffSeconds = baseBackoffSeconds * (int)Math.Pow(2, attempt - 1);
+            await Task.Delay(TimeSpan.FromSeconds(backoffSeconds));
         }
 
-        // Parse the response JSON into our GeminiResponse record and extract the text from the first candidate's first part.
-        GeminiResponse? parsed = await response.Content.ReadFromJsonAsync<GeminiResponse>();
-        string? text = parsed?.Candidates?.FirstOrDefault()?.Content?.Parts?.FirstOrDefault()?.Text?.Trim();
-
-        // If the text is null, empty, whitespace, or "NO_READING", return null.
-        if (string.IsNullOrWhiteSpace(text) || text == "NO_READING")
-            return null;
-
-        // Return the extracted text.
-        return text;
+        // If we reach here, all attempts failed. Log the failure and return null.
+        return null;
     }
 
     /// <summary>
