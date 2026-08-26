@@ -34,9 +34,17 @@ public class GeminiOcrService(HttpClient httpClient, ILogger<GeminiOcrService> l
         string requestUrl = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent";
         GeminiRequest requestBody = new([new([new(InlineData: new GeminiInlineData("image/jpeg", base64Image)), new(Text: Prompt)])]);
 
+        // Waits with exponential backoff before the given attempt's retry, shared by every retryable failure path below.
+        async Task WaitBeforeRetryAsync(int attempt)
+        {
+            int backoffSeconds = baseBackoffSeconds * (int)Math.Pow(2, attempt - 1);
+            await Task.Delay(TimeSpan.FromSeconds(backoffSeconds));
+        }
+
         // Retry on transient failures (503 overloaded, 429 rate limited, or a network-level timeout/hang) with exponential backoff, up to maxAttempts total.
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
+            bool isLastAttempt = attempt == maxAttempts;
             HttpResponseMessage response;
             try
             {
@@ -48,17 +56,15 @@ public class GeminiOcrService(HttpClient httpClient, ILogger<GeminiOcrService> l
             catch (Exception ex) when (ex is TaskCanceledException or HttpRequestException or IOException)
             {
                 // The connection itself timed out or failed before we got any response - treat this the same as a retryable server error.
-                bool isLastAttemptAfterException = attempt == maxAttempts;
                 if (logger.IsEnabled(LogLevel.Warning))
                     logger.LogWarning(ex, "Gemini API request failed on attempt {Attempt}/{MaxAttempts}", attempt, maxAttempts);
 
                 // If this was the last attempt, give up and return null.
-                if (isLastAttemptAfterException)
+                if (isLastAttempt)
                     return null;
 
                 // Wait with exponential backoff before the next attempt.
-                int exceptionBackoffSeconds = baseBackoffSeconds * (int)Math.Pow(2, attempt - 1);
-                await Task.Delay(TimeSpan.FromSeconds(exceptionBackoffSeconds));
+                await WaitBeforeRetryAsync(attempt);
                 continue;
             }
 
@@ -80,7 +86,6 @@ public class GeminiOcrService(HttpClient httpClient, ILogger<GeminiOcrService> l
             // If we reach here, the request failed. Log the error and determine whether to retry.
             string errorBody = await response.Content.ReadAsStringAsync();
             bool isRetryable = response.StatusCode is HttpStatusCode.ServiceUnavailable or HttpStatusCode.TooManyRequests;
-            bool isLastAttempt = attempt == maxAttempts;
             if (logger.IsEnabled(LogLevel.Warning))
                 logger.LogWarning("Gemini API returned {StatusCode} on attempt {Attempt}/{MaxAttempts}: {ErrorBody}", response.StatusCode, attempt, maxAttempts, errorBody);
 
@@ -89,8 +94,7 @@ public class GeminiOcrService(HttpClient httpClient, ILogger<GeminiOcrService> l
                 return null;
 
             // Wait with exponential backoff before the next attempt.
-            int backoffSeconds = baseBackoffSeconds * (int)Math.Pow(2, attempt - 1);
-            await Task.Delay(TimeSpan.FromSeconds(backoffSeconds));
+            await WaitBeforeRetryAsync(attempt);
         }
 
         // If we reach here, all attempts failed. Log the failure and return null.
