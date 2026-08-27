@@ -58,6 +58,12 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     private readonly string EmojiFontRelativePath = config["Chitter:Image:EmojiFontPath"] ?? "Assets/Fonts/NotoEmoji-Medium.ttf";
 
     /// <summary>
+    /// Path, relative to the content root, of the CJK font used as a fallback for Chinese characters
+    /// Space Grotesk doesn't cover.
+    /// </summary>
+    private readonly string CjkFontRelativePath = config["Chitter:Image:CjkFontPath"] ?? "Assets/Fonts/NotoSansSC-Medium.ttf";
+
+    /// <summary>
     /// Maximum height, in pixels, of a single raster image command.
     /// </summary>
     private readonly int MaxBandHeightPx = config.GetValue<int?>("Chitter:Image:MaxBandHeightPx") ?? 48;
@@ -75,13 +81,18 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     /// <returns>True if the payload was sent successfully, false otherwise.</returns>
     public async Task<bool> PrintTextAsync(string bodyText)
     {
-        // Setup fonts and colours.
+        // Setup fonts and colours. Body/footer fall back from Space Grotesk, to the monochrome emoji font, to a CJK font.
         using SKTypeface typeface = LoadTypeface(config["Chitter:Image:FontPath"] ?? "Assets/Fonts/SpaceGrotesk-Medium.ttf");
         using SKTypeface emojiTypeface = LoadTypeface(EmojiFontRelativePath);
+        using SKTypeface cjkTypeface = LoadTypeface(CjkFontRelativePath);
         using SKFont bodyFont = new(typeface, BodyFontSize);
         using SKFont bodyEmojiFont = new(emojiTypeface, BodyFontSize);
+        using SKFont bodyCjkFont = new(cjkTypeface, BodyFontSize);
         using SKFont footerFont = new(typeface, FooterFontSize);
         using SKFont footerEmojiFont = new(emojiTypeface, FooterFontSize);
+        using SKFont footerCjkFont = new(cjkTypeface, FooterFontSize);
+        SKFont[] bodyFonts = [bodyFont, bodyEmojiFont, bodyCjkFont];
+        SKFont[] footerFonts = [footerFont, footerEmojiFont, footerCjkFont];
         using SKPaint paint = new() { Color = SKColors.Black, IsAntialias = true };
 
         // Calculate the usable width for text and set the footer information.
@@ -89,7 +100,7 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
         string footerTimestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
 
         // Wrap the body text.
-        List<string> bodyLines = WrapText(bodyText, bodyFont, bodyEmojiFont, paint, contentWidth);
+        List<string> bodyLines = WrapText(bodyText, bodyFonts, paint, contentWidth);
 
         // Set the line height for each font.
         float bodyLineHeight = BodyFontSize * 1.3f;
@@ -108,7 +119,7 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
             float y = MarginPx + BodyFontSize;
             foreach (string line in bodyLines)
             {
-                DrawMixedText(canvas, line, MarginPx, y, bodyFont, bodyEmojiFont, paint);
+                DrawMixedText(canvas, line, MarginPx, y, bodyFonts, paint);
                 y += bodyLineHeight;
             }
 
@@ -118,7 +129,7 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
              
             // Draw the timestamp.
             float timestampY = MarginPx + bodyBlockHeight + MarginPx + DividerHeight + FooterFontSize;
-            DrawMixedText(canvas, footerTimestamp, MarginPx, timestampY, footerFont, footerEmojiFont, paint);
+            DrawMixedText(canvas, footerTimestamp, MarginPx, timestampY, footerFonts, paint);
         }
 
         // Convert the bitmap to a 1-bit monochrome raster image, split into paced bands, and send it to the printer.
@@ -137,24 +148,26 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     }
 
     /// <summary>
-    /// Picks the primary font if its typeface contains a glyph for the given rune, otherwise falls back to the emoji font.
+    /// Picks the first font in the given fallback chain whose typeface contains a glyph for the given rune, falling back to the first font in the chain.
     /// </summary>
-    private static SKFont FontForRune(System.Text.Rune rune, SKFont primaryFont, SKFont emojiFont)
+    /// <param name="rune">The rune to find a font for.</param>
+    /// <param name="fonts">The fallback chain, in priority order.</param>
+    private static SKFont FontForRune(System.Text.Rune rune, SKFont[] fonts)
     {
-        if (primaryFont.ContainsGlyph(rune.Value))
-            return primaryFont;
-        if (emojiFont.ContainsGlyph(rune.Value))
-            return emojiFont;
-        return primaryFont;
+        foreach (SKFont font in fonts)
+        {
+            if (font.ContainsGlyph(rune.Value))
+                return font;
+        }
+        return fonts[0];
     }
 
     /// <summary>
     /// Splits the given text into runs of consecutive runes that resolve to the same font.
     /// </summary>
     /// <param name="text">The text to split into runs.</param>
-    /// <param name="primaryFont">The main body/footer font.</param>
-    /// <param name="emojiFont">The fallback emoji font.</param>
-    private static List<(string Text, SKFont Font)> SplitIntoFontRuns(string text, SKFont primaryFont, SKFont emojiFont)
+    /// <param name="fonts">The fallback chain, in priority order.</param>
+    private static List<(string Text, SKFont Font)> SplitIntoFontRuns(string text, SKFont[] fonts)
     {
         // Create a list of runs, each containing the text and the font used for that run.
         List<(string Text, SKFont Font)> runs = [];
@@ -165,7 +178,7 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
         foreach (System.Text.Rune rune in text.EnumerateRunes())
         {
             // Determine which font to use for this rune.
-            SKFont font = FontForRune(rune, primaryFont, emojiFont);
+            SKFont font = FontForRune(rune, fonts);
             if (currentFont != null && font != currentFont)
             {
                 runs.Add((currentRun.ToString(), currentFont));
@@ -189,13 +202,12 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     /// Measures the width of the given text across mixed fonts, summing each font run's measured width.
     /// </summary>
     /// <param name="text">The text to measure.</param>
-    /// <param name="primaryFont">The main body/footer font.</param>
-    /// <param name="emojiFont">The fallback emoji font.</param>
+    /// <param name="fonts">The fallback chain, in priority order.</param>
     /// <param name="paint">The paint used to measure text width.</param>
-    private static float MeasureMixedText(string text, SKFont primaryFont, SKFont emojiFont, SKPaint paint)
+    private static float MeasureMixedText(string text, SKFont[] fonts, SKPaint paint)
     {
         float total = 0f;
-        foreach ((string runText, SKFont runFont) in SplitIntoFontRuns(text, primaryFont, emojiFont))
+        foreach ((string runText, SKFont runFont) in SplitIntoFontRuns(text, fonts))
             total += runFont.MeasureText(runText, paint);
         return total;
     }
@@ -207,13 +219,12 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     /// <param name="text">The text to draw.</param>
     /// <param name="x">The starting x position.</param>
     /// <param name="y">The baseline y position.</param>
-    /// <param name="primaryFont">The main body/footer font.</param>
-    /// <param name="emojiFont">The fallback emoji font.</param>
+    /// <param name="fonts">The fallback chain, in priority order.</param>
     /// <param name="paint">The paint used to draw and measure text.</param>
-    private static void DrawMixedText(SKCanvas canvas, string text, float x, float y, SKFont primaryFont, SKFont emojiFont, SKPaint paint)
+    private static void DrawMixedText(SKCanvas canvas, string text, float x, float y, SKFont[] fonts, SKPaint paint)
     {
         float currentX = x;
-        foreach ((string runText, SKFont runFont) in SplitIntoFontRuns(text, primaryFont, emojiFont))
+        foreach ((string runText, SKFont runFont) in SplitIntoFontRuns(text, fonts))
         {
             canvas.DrawText(runText, currentX, y, SKTextAlign.Left, runFont, paint);
             currentX += runFont.MeasureText(runText, paint);
@@ -224,11 +235,10 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     /// Splits the given text into lines that each fit within the given pixel width, wrapping on word boundaries.
     /// </summary>
     /// <param name="text">The text to wrap. Existing newlines are treated as forced line breaks.</param>
-    /// <param name="font">The primary font used to measure text width.</param>
-    /// <param name="emojiFont">The fallback emoji font used to measure any characters the primary font doesn't cover.</param>
+    /// <param name="fonts">The fallback chain used to measure text width, in priority order.</param>
     /// <param name="paint">The paint used to measure text width.</param>
     /// <param name="maxWidth">The maximum line width, in pixels.</param>
-    private static List<string> WrapText(string text, SKFont font, SKFont emojiFont, SKPaint paint, int maxWidth)
+    private static List<string> WrapText(string text, SKFont[] fonts, SKPaint paint, int maxWidth)
     {
         // Split the text into paragraphs and then wrap each paragraph into lines.
         List<string> lines = [];
@@ -247,7 +257,7 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
             for (int i = 1; i < words.Length; i++)
             {
                 string candidate = currentLine + " " + words[i];
-                if (MeasureMixedText(candidate, font, emojiFont, paint) <= maxWidth)
+                if (MeasureMixedText(candidate, fonts, paint) <= maxWidth)
                 {
                     currentLine = candidate;
                 }
