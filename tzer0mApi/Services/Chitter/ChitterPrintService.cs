@@ -54,13 +54,13 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     /// <summary>
     /// Maximum height, in pixels, of a single raster image command.
     /// </summary>
-    private readonly int MaxBandHeightPx = config.GetValue<int?>("Chitter:Image:MaxBandHeightPx") ?? 256;
+    private readonly int MaxBandHeightPx = config.GetValue<int?>("Chitter:Image:MaxBandHeightPx") ?? 48;
 
     /// <summary>
     /// Delay, in milliseconds, after each image band is flushed to the printer, giving it time to physically
     /// print and drain its receive buffer before the next band arrives.
     /// </summary>
-    private readonly int BandDelayMs = config.GetValue<int?>("Chitter:Image:BandDelayMs") ?? 200;
+    private readonly int BandDelayMs = config.GetValue<int?>("Chitter:Image:BandDelayMs") ?? 700;
 
     /// <summary>
     /// Renders the given body text with a divider-and-timestamp footer beneath it, and sends the resulting image to the printer.
@@ -77,18 +77,17 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
 
         // Calculate the usable width for text and set the footer information.
         int contentWidth = WidthPx - (MarginPx * 2);
-        string footerDivider = new('-', 40);
         string footerTimestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
 
-        // Wrap the body text and set the footer lines.
+        // Wrap the body text.
         List<string> bodyLines = WrapText(bodyText, bodyFont, paint, contentWidth);
-        List<string> footerLines = [footerDivider, footerTimestamp];
 
-        // Set the line height for each font and calculate the total image height.
+        // Set the line height for each font.
         float bodyLineHeight = BodyFontSize * 1.3f;
         float footerLineHeight = FooterFontSize * 1.3f;
+        const int DividerHeight = 24;
         int bodyBlockHeight = (int)Math.Ceiling(bodyLines.Count * bodyLineHeight);
-        int footerBlockHeight = (int)Math.Ceiling(footerLines.Count * footerLineHeight);
+        int footerBlockHeight = DividerHeight + (int)Math.Ceiling(footerLineHeight);
         int totalHeight = MarginPx + bodyBlockHeight + MarginPx + footerBlockHeight + MarginPx;
 
         // Create a bitmap and erase it to white.
@@ -104,13 +103,13 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
                 y += bodyLineHeight;
             }
 
-            // Calculate the Y position for the footer and draw the footer.
-            y = MarginPx + bodyBlockHeight + MarginPx + FooterFontSize;
-            foreach (string line in footerLines)
-            {
-                canvas.DrawText(line, MarginPx, y, SKTextAlign.Left, footerFont, paint);
-                y += footerLineHeight;
-            }
+            // Draw the footer divider as an actual line spanning the full content width, then the timestamp beneath it.
+            float dividerY = MarginPx + bodyBlockHeight + MarginPx + (DividerHeight / 2f);
+            canvas.DrawLine(MarginPx, dividerY, MarginPx + contentWidth, dividerY, paint);
+             
+            // Draw the timestamp.
+            float timestampY = MarginPx + bodyBlockHeight + MarginPx + DividerHeight + FooterFontSize;
+            canvas.DrawText(footerTimestamp, MarginPx, timestampY, SKTextAlign.Left, footerFont, paint);
         }
 
         // Convert the bitmap to a 1-bit monochrome raster image, split into paced bands, and send it to the printer.
