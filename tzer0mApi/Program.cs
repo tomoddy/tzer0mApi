@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using tzer0mApi.Services.Chitter;
 using tzer0mApi.Services.Keys;
 using tzer0mApi.Services.Middleware;
 using tzer0mApi.Services.SmarterMeter;
@@ -12,6 +13,7 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<TingService>();
+builder.Services.AddScoped<ChitterPrintService>();
 builder.Services.AddHttpClient<GeminiOcrService>();
 builder.Services.AddSingleton<DatabaseService>();
 builder.Services.AddScoped<KeysService>();
