@@ -21,16 +21,16 @@ public class ChitterController(ChitterPrintService printService) : ControllerBas
     {
         // Validate that the request body contains non-empty text.
         if (string.IsNullOrWhiteSpace(text))
-            return BadRequest(new { error = "Request body must contain non-empty text" });
+            return BadRequest(new { error = "Request body must contain non-empty text." });
 
         // Validate that the request body does not exceed 1024 characters.
         if (text.Length > 1024)
-            return BadRequest(new { error = "Request body must not exceed 1024 characters" });
+            return StatusCode(413, new { error = "Request body must not exceed 1024 characters." });
 
         // Send the text to the print service and check if it was sent successfully.
         bool sent = await printService.PrintTextAsync(text);
         if (!sent)
-            return StatusCode(502, new { error = "Failed to reach printer" });
+            return StatusCode(502, new { error = "Failed to reach printer." });
 
         // Return a success response indicating that the text was sent to the printer.
         return Ok(new { message = "Sent to printer" });
