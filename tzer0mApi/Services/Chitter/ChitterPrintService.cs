@@ -52,6 +52,17 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     private readonly int MarginPx = config.GetValue<int?>("Chitter:Image:MarginPx") ?? 12;
 
     /// <summary>
+    /// Maximum height, in pixels, of a single raster image command.
+    /// </summary>
+    private readonly int MaxBandHeightPx = config.GetValue<int?>("Chitter:Image:MaxBandHeightPx") ?? 256;
+
+    /// <summary>
+    /// Delay, in milliseconds, after each image band is flushed to the printer, giving it time to physically
+    /// print and drain its receive buffer before the next band arrives.
+    /// </summary>
+    private readonly int BandDelayMs = config.GetValue<int?>("Chitter:Image:BandDelayMs") ?? 200;
+
+    /// <summary>
     /// Renders the given body text with a divider-and-timestamp footer beneath it, and sends the resulting image to the printer.
     /// </summary>
     /// <param name="bodyText">The text to print above the footer.</param>
@@ -102,9 +113,9 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
             }
         }
 
-        // Convert the bitmap to a 1-bit monochrome raster image and send it to the printer.
-        byte[] payload = BuildImagePayload(bitmap);
-        return await SendAsync(payload);
+        // Convert the bitmap to a 1-bit monochrome raster image, split into paced bands, and send it to the printer.
+        List<byte[]> segments = BuildImageSegments(bitmap);
+        return await SendPacedAsync(segments);
     }
 
     /// <summary>
@@ -163,16 +174,16 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     }
 
     /// <summary>
-    /// Converts the given bitmap to a 1-bit monochrome bitmap and wraps it in an ESC/POS byte sequence: initialize printer, feed, raster image, feed, and cut.
+    /// Converts the given bitmap to a 1-bit monochrome bitmap and splits it into ESC/POS byte segments.
     /// </summary>
     /// <param name="bitmap">The bitmap to print, already sized to the printer's usable width.</param>
-    private byte[] BuildImagePayload(SKBitmap bitmap)
+    private List<byte[]> BuildImageSegments(SKBitmap bitmap)
     {
-        // Calculate the width in bytes (1 byte = 8 pixels) and create a byte array to hold the raster data.
+        // Calculate the width in bytes (1 byte = 8 pixels).
         int widthBytes = (bitmap.Width + 7) / 8;
         byte[] rasterBitmap = new byte[widthBytes * bitmap.Height];
 
-        // Iterate over each pixel in the bitmap, converting it to black or white based on luminance, and set the corresponding bit in the raster byte array.
+        // Iterate over each pixel in the bitmap, and threshold every pixel to black/white up front.
         for (int y = 0; y < bitmap.Height; y++)
         {
             for (int x = 0; x < bitmap.Width; x++)
@@ -181,54 +192,64 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
                 SKColor pixel = bitmap.GetPixel(x, y);
                 int luminance = (pixel.Red + pixel.Green + pixel.Blue) / 3;
                 if (luminance < 128)
-                    rasterBitmap[(y * widthBytes) + (x / 8)] |= (byte)(0x80 >> (x % 8));
+                {
+                    int rotatedY = bitmap.Height - 1 - y;
+                    int rotatedX = bitmap.Width - 1 - x;
+                    rasterBitmap[(rotatedY * widthBytes) + (rotatedX / 8)] |= (byte)(0x80 >> (rotatedX % 8));
+                }
             }
         }
 
-        // Create a memory stream and initialize it.
-        using MemoryStream stream = new();
-        byte[] init = [0x1B, 0x40];
-        stream.Write(init, 0, init.Length);
+        // Setup segment: initialize printer, then feed the configured number of lines before the image starts.
+        List<byte[]> segments = [];
+        segments.Add([0x1B, 0x40, 0x1B, 0x64, (byte)FeedBefore]);
 
-        // Feed the specified number of lines before printing the image.
-        byte[] feedBefore = [0x1B, 0x64, (byte)FeedBefore];
-        stream.Write(feedBefore, 0, feedBefore.Length);
+        // Split the raster data into bands of at most MaxBandHeightPx rows.
+        for (int bandStartRow = 0; bandStartRow < bitmap.Height; bandStartRow += MaxBandHeightPx)
+        {
+            int bandHeight = Math.Min(MaxBandHeightPx, bitmap.Height - bandStartRow);
+            int bandByteOffset = bandStartRow * widthBytes;
+            int bandByteLength = bandHeight * widthBytes;
 
-        // Send the raster image using the ESC/POS GS v 0 command, which requires the width and height in bytes and pixels, respectively.
-        int xL = widthBytes & 0xFF;
-        int xH = (widthBytes >> 8) & 0xFF;
-        int yL = bitmap.Height & 0xFF;
-        int yH = (bitmap.Height >> 8) & 0xFF;
-        byte[] imageHeader = [0x1D, 0x76, 0x30, 0x00, (byte)xL, (byte)xH, (byte)yL, (byte)yH];
-        stream.Write(imageHeader, 0, imageHeader.Length);
-        stream.Write(rasterBitmap, 0, rasterBitmap.Length);
+            int xL = widthBytes & 0xFF;
+            int xH = (widthBytes >> 8) & 0xFF;
+            int yL = bandHeight & 0xFF;
+            int yH = (bandHeight >> 8) & 0xFF;
+            byte[] bandSegment = new byte[8 + bandByteLength];
+            byte[] imageHeader = [0x1D, 0x76, 0x30, 0x00, (byte)xL, (byte)xH, (byte)yL, (byte)yH];
+            Array.Copy(imageHeader, bandSegment, imageHeader.Length);
+            Array.Copy(rasterBitmap, bandByteOffset, bandSegment, imageHeader.Length, bandByteLength);
+            segments.Add(bandSegment);
+        }
 
-        // Feed the specified number of lines after printing the image.
-        byte[] feedAfter = [0x1B, 0x64, (byte)FeedAfter];
-        stream.Write(feedAfter, 0, feedAfter.Length);
+        // Final segment: feed the configured number of lines after the image, then cut.
+        segments.Add([0x1B, 0x64, (byte)FeedAfter, 0x1D, 0x56, 0x00]);
 
-        // Send the cut command to the printer.
-        byte[] cut = [0x1D, 0x56, 0x00];
-        stream.Write(cut, 0, cut.Length);
-
-        // Return the complete ESC/POS payload as a byte array.
-        return stream.ToArray();
+        return segments;
     }
 
     /// <summary>
-    /// Opens a TCP connection to the configured printer and writes the given payload.
+    /// Opens a TCP connection to the configured printer and writes each segment in turn.
     /// </summary>
-    /// <param name="payload">The raw ESC/POS bytes to send.</param>
-    /// <returns>True if the payload was sent successfully, false otherwise.</returns>
-    private async Task<bool> SendAsync(byte[] payload)
+    /// <param name="segments">The ordered ESC/POS byte segments to send.</param>
+    /// <returns>True if all segments were sent successfully, false otherwise.</returns>
+    private async Task<bool> SendPacedAsync(List<byte[]> segments)
     {
         try
         {
+            // Intialise the connecton.
             using TcpClient client = new();
             await client.ConnectAsync(PrinterIp, PrinterPort);
             using NetworkStream stream = client.GetStream();
-            await stream.WriteAsync(payload);
-            await stream.FlushAsync();
+
+            // Iterate through each segment.
+            for (int i = 0; i < segments.Count; i++)
+            {
+                await stream.WriteAsync(segments[i]);
+                await stream.FlushAsync();
+                if (i < segments.Count - 1)
+                    await Task.Delay(BandDelayMs);
+            }
             return true;
         }
         catch (Exception ex)
