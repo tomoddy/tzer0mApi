@@ -138,6 +138,85 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     }
 
     /// <summary>
+    /// Resizes the given image to the printer's usable content width, dithers it to 1-bit monochrome using Floyd-Steinberg error diffusion, and sends the result to the printer beneath the same margin used for text.
+    /// </summary>
+    /// <param name="imageStream">The image content stream, in any format SkiaSharp can decode.</param>
+    /// <returns>True if the payload was sent successfully, false otherwise.</returns>
+    /// <exception cref="InvalidOperationException">The stream could not be decoded or resized as an image.</exception>
+    public async Task<bool> PrintImageAsync(Stream imageStream)
+    {
+        // Decode the uploaded image.
+        using SKBitmap original = SKBitmap.Decode(imageStream) ?? throw new InvalidOperationException("Could not decode image.");
+
+        // Resize to the printer's usable content width, preserving aspect ratio.
+        int contentWidth = WidthPx - (MarginPx * 2);
+        int targetHeight = Math.Max(1, (int)Math.Round(original.Height * (contentWidth / (double)original.Width)));
+        SKSamplingOptions sampling = new(SKFilterMode.Linear, SKMipmapMode.None);
+        using SKBitmap resized = original.Resize(new SKImageInfo(contentWidth, targetHeight), sampling) ?? throw new InvalidOperationException("Could not resize image.");
+
+        // Dither the resized image to 1-bit monochrome.
+        using SKBitmap dithered = DitherToMonochrome(resized);
+
+        // Compose onto a full-width canvas with the same margin used for text.
+        int totalHeight = MarginPx + targetHeight + MarginPx;
+        using SKBitmap bitmap = new(WidthPx, totalHeight);
+        bitmap.Erase(SKColors.White);
+        using (SKCanvas canvas = new(bitmap))
+            canvas.DrawBitmap(dithered, MarginPx, MarginPx, sampling);
+
+        // Convert the bitmap to a 1-bit monochrome raster image, split into paced bands, and send it to the printer.
+        List<byte[]> segments = BuildImageSegments(bitmap);
+        return await SendPacedAsync(segments);
+    }
+
+    /// <summary>
+    /// Converts the given bitmap to pure black/white pixels using Floyd-Steinberg error diffusion.
+    /// </summary>
+    /// <param name="source">The bitmap to dither.</param>
+    private static SKBitmap DitherToMonochrome(SKBitmap source)
+    {
+        // Get the dimensions of the source bitmap.
+        int width = source.Width;
+        int height = source.Height;
+
+        // Work in a floating-point luminance buffer so diffused error can push values outside 0-255 temporarily.
+        float[,] luminance = new float[width, height];
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                SKColor pixel = source.GetPixel(x, y);
+                luminance[x, y] = (pixel.Red * 0.299f) + (pixel.Green * 0.587f) + (pixel.Blue * 0.114f);
+            }
+        }
+
+        // Threshold each pixel in turn, diffusing its rounding error onto its not-yet-visited neighbours.
+        SKBitmap result = new(width, height);
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                bool isBlack = luminance[x, y] < 128f;
+                result.SetPixel(x, y, isBlack ? SKColors.Black : SKColors.White);
+                float error = luminance[x, y] - (isBlack ? 0f : 255f);
+                if (x + 1 < width)
+                    luminance[x + 1, y] += error * 7f / 16f;
+                if (y + 1 < height)
+                {
+                    if (x - 1 >= 0)
+                        luminance[x - 1, y + 1] += error * 3f / 16f;
+                    luminance[x, y + 1] += error * 5f / 16f;
+                    if (x + 1 < width)
+                        luminance[x + 1, y + 1] += error * 1f / 16f;
+                }
+            }
+        }
+
+        // Return the dithered monochrome bitmap.
+        return result;
+    }
+
+    /// <summary>
     /// Loads a bundled typeface from disk.
     /// </summary>
     /// <param name="fontRelativePath">The font file's path, relative to the content root.</param>
