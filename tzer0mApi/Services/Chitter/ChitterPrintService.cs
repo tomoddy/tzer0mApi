@@ -52,6 +52,11 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     private readonly int MarginPx = config.GetValue<int?>("Chitter:Image:MarginPx") ?? 12;
 
     /// <summary>
+    /// Path, relative to the content root, of the bold font used for section headings, marked in body text as **like this**.
+    /// </summary>
+    private readonly string BoldFontRelativePath = config["Chitter:Image:BoldFontPath"] ?? "Assets/Fonts/SpaceGrotesk-Bold.ttf";
+
+    /// <summary>
     /// Path, relative to the content root, of the monochrome emoji font used as a fallback for characters Space Grotesk doesn't cover.
     /// </summary>
     private readonly string EmojiFontRelativePath = config["Chitter:Image:EmojiFontPath"] ?? "Assets/Fonts/NotoEmoji-Medium.ttf";
@@ -85,23 +90,26 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     {
         // Setup fonts and colours. Body/footer fall back from Space Grotesk, to the monochrome emoji font, to a CJK font.
         using SKTypeface typeface = LoadTypeface(config["Chitter:Image:FontPath"] ?? "Assets/Fonts/SpaceGrotesk-Medium.ttf");
+        using SKTypeface boldTypeface = LoadTypeface(BoldFontRelativePath);
         using SKTypeface emojiTypeface = LoadTypeface(EmojiFontRelativePath);
         using SKTypeface cjkTypeface = LoadTypeface(CjkFontRelativePath);
         using SKFont bodyFont = new(typeface, BodyFontSize);
+        using SKFont bodyBoldFont = new(boldTypeface, BodyFontSize);
         using SKFont bodyEmojiFont = new(emojiTypeface, BodyFontSize);
         using SKFont bodyCjkFont = new(cjkTypeface, BodyFontSize);
         using SKFont footerFont = new(typeface, FooterFontSize);
         using SKFont footerEmojiFont = new(emojiTypeface, FooterFontSize);
         using SKFont footerCjkFont = new(cjkTypeface, FooterFontSize);
         SKFont[] bodyFonts = [bodyFont, bodyEmojiFont, bodyCjkFont];
+        SKFont[] bodyBoldFonts = [bodyBoldFont, bodyEmojiFont, bodyCjkFont];
         SKFont[] footerFonts = [footerFont, footerEmojiFont, footerCjkFont];
         using SKPaint paint = new() { Color = SKColors.Black, IsAntialias = true };
 
         // Calculate the usable width for text.
         int contentWidth = WidthPx - (MarginPx * 2);
 
-        // Wrap the body text.
-        List<string> bodyLines = WrapText(bodyText, bodyFonts, paint, contentWidth);
+        // Wrap the body text - a line wrapped in **like this** prints bold and unmarked, for section headings.
+        List<(string Text, bool IsBold)> bodyLines = WrapBodyText(bodyText, bodyFonts, bodyBoldFonts, paint, contentWidth);
 
         // Work out the body and footer block heights.
         float bodyLineHeight = BodyFontSize * 1.3f;
@@ -116,9 +124,9 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
         {
             // Calculate the Y position for each line and draw the body.
             float y = MarginPx + BodyFontSize;
-            foreach (string line in bodyLines)
+            foreach ((string line, bool isBold) in bodyLines)
             {
-                DrawMixedText(canvas, line, MarginPx, y, bodyFonts, paint);
+                DrawMixedText(canvas, line, MarginPx, y, isBold ? bodyBoldFonts : bodyFonts, paint);
                 y += bodyLineHeight;
             }
 
@@ -356,23 +364,29 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     }
 
     /// <summary>
-    /// Splits the given text into lines that each fit within the given pixel width, wrapping on word boundaries.
+    /// Splits the given text into lines that each fit within the given pixel width, wrapping on word boundaries. A paragraph wrapped in **like this** has the markers stripped and is wrapped/measured against boldFonts instead of fonts, with IsBold set on every line it produces.
     /// </summary>
     /// <param name="text">The text to wrap. Existing newlines are treated as forced line breaks.</param>
-    /// <param name="fonts">The fallback chain used to measure text width, in priority order.</param>
+    /// <param name="fonts">The fallback chain used for normal paragraphs, in priority order.</param>
+    /// <param name="boldFonts">The fallback chain used for **bold** paragraphs, in priority order.</param>
     /// <param name="paint">The paint used to measure text width.</param>
     /// <param name="maxWidth">The maximum line width, in pixels.</param>
-    private static List<string> WrapText(string text, SKFont[] fonts, SKPaint paint, int maxWidth)
+    private static List<(string Text, bool IsBold)> WrapBodyText(string text, SKFont[] fonts, SKFont[] boldFonts, SKPaint paint, int maxWidth)
     {
         // Split the text into paragraphs and then wrap each paragraph into lines.
-        List<string> lines = [];
-        foreach (string paragraph in text.Split('\n'))
+        List<(string Text, bool IsBold)> lines = [];
+        foreach (string rawParagraph in text.Split('\n'))
         {
+            // A paragraph wrapped in ** markers on both ends prints bold, with the markers themselves stripped.
+            bool isBold = rawParagraph.Length > 4 && rawParagraph.StartsWith("**") && rawParagraph.EndsWith("**");
+            string paragraph = isBold ? rawParagraph[2..^2] : rawParagraph;
+            SKFont[] paragraphFonts = isBold ? boldFonts : fonts;
+
             // Split the paragraph into words, skip if the line has no words.
             string[] words = paragraph.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (words.Length == 0)
             {
-                lines.Add(string.Empty);
+                lines.Add((string.Empty, isBold));
                 continue;
             }
 
@@ -381,19 +395,19 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
             for (int i = 1; i < words.Length; i++)
             {
                 string candidate = currentLine + " " + words[i];
-                if (MeasureMixedText(candidate, fonts, paint) <= maxWidth)
+                if (MeasureMixedText(candidate, paragraphFonts, paint) <= maxWidth)
                 {
                     currentLine = candidate;
                 }
                 else
                 {
-                    lines.Add(currentLine);
+                    lines.Add((currentLine, isBold));
                     currentLine = words[i];
                 }
             }
 
             // Add the last line of the paragraph.
-            lines.Add(currentLine);
+            lines.Add((currentLine, isBold));
         }
 
         // Return the wrapped lines.
