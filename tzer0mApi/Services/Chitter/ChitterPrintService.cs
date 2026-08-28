@@ -52,14 +52,12 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     private readonly int MarginPx = config.GetValue<int?>("Chitter:Image:MarginPx") ?? 12;
 
     /// <summary>
-    /// Path, relative to the content root, of the monochrome emoji font used as a fallback for characters
-    /// Space Grotesk doesn't cover.
+    /// Path, relative to the content root, of the monochrome emoji font used as a fallback for characters Space Grotesk doesn't cover.
     /// </summary>
     private readonly string EmojiFontRelativePath = config["Chitter:Image:EmojiFontPath"] ?? "Assets/Fonts/NotoEmoji-Medium.ttf";
 
     /// <summary>
-    /// Path, relative to the content root, of the CJK font used as a fallback for Chinese characters
-    /// Space Grotesk doesn't cover.
+    /// Path, relative to the content root, of the CJK font used as a fallback for Chinese characters Space Grotesk doesn't cover.
     /// </summary>
     private readonly string CjkFontRelativePath = config["Chitter:Image:CjkFontPath"] ?? "Assets/Fonts/NotoSansSC-Medium.ttf";
 
@@ -69,8 +67,12 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     private readonly int MaxBandHeightPx = config.GetValue<int?>("Chitter:Image:MaxBandHeightPx") ?? 48;
 
     /// <summary>
-    /// Delay, in milliseconds, after each image band is flushed to the printer, giving it time to physically
-    /// print and drain its receive buffer before the next band arrives.
+    /// Maximum height, in pixels, an uploaded photo is allowed to print at - a tall photo is centre-cropped down to this rather than sent at full height, since PrintImageAsync sends the whole thing as one unbanded command and a very tall one can overwhelm the printer's receive buffer.
+    /// </summary>
+    private readonly int MaxImageHeightPx = config.GetValue<int?>("Chitter:Image:MaxImageHeightPx") ?? 640;
+
+    /// <summary>
+    /// Delay, in milliseconds, after each image band is flushed to the printer, giving it time to physically print and drain its receive buffer before the next band arrives.
     /// </summary>
     private readonly int BandDelayMs = config.GetValue<int?>("Chitter:Image:BandDelayMs") ?? 700;
 
@@ -95,19 +97,16 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
         SKFont[] footerFonts = [footerFont, footerEmojiFont, footerCjkFont];
         using SKPaint paint = new() { Color = SKColors.Black, IsAntialias = true };
 
-        // Calculate the usable width for text and set the footer information.
+        // Calculate the usable width for text.
         int contentWidth = WidthPx - (MarginPx * 2);
-        string footerTimestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
 
         // Wrap the body text.
         List<string> bodyLines = WrapText(bodyText, bodyFonts, paint, contentWidth);
 
-        // Set the line height for each font.
+        // Work out the body and footer block heights.
         float bodyLineHeight = BodyFontSize * 1.3f;
-        float footerLineHeight = FooterFontSize * 1.3f;
-        const int DividerHeight = 24;
         int bodyBlockHeight = (int)Math.Ceiling(bodyLines.Count * bodyLineHeight);
-        int footerBlockHeight = DividerHeight + (int)Math.Ceiling(footerLineHeight);
+        int footerBlockHeight = FooterBlockHeight();
         int totalHeight = MarginPx + bodyBlockHeight + MarginPx + footerBlockHeight + MarginPx;
 
         // Create a bitmap and erase it to white.
@@ -123,17 +122,12 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
                 y += bodyLineHeight;
             }
 
-            // Draw the footer divider as an actual line spanning the full content width, then the timestamp beneath it.
-            float dividerY = MarginPx + bodyBlockHeight + MarginPx + (DividerHeight / 2f);
-            canvas.DrawLine(MarginPx, dividerY, MarginPx + contentWidth, dividerY, paint);
-             
-            // Draw the timestamp.
-            float timestampY = MarginPx + bodyBlockHeight + MarginPx + DividerHeight + FooterFontSize;
-            DrawMixedText(canvas, footerTimestamp, MarginPx, timestampY, footerFonts, paint);
+            // Draw the footer divider and timestamp beneath the body.
+            DrawFooter(canvas, footerFonts, paint, contentWidth, MarginPx + bodyBlockHeight + MarginPx);
         }
 
         // Convert the bitmap to a 1-bit monochrome raster image, split into paced bands, and send it to the printer.
-        List<byte[]> segments = BuildImageSegments(bitmap);
+        List<PrintSegment> segments = BuildImageSegments(bitmap);
         return await SendPacedAsync(segments);
     }
 
@@ -154,18 +148,39 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
         SKSamplingOptions sampling = new(SKFilterMode.Linear, SKMipmapMode.None);
         using SKBitmap resized = original.Resize(new SKImageInfo(contentWidth, targetHeight), sampling) ?? throw new InvalidOperationException("Could not resize image.");
 
-        // Dither the resized image to 1-bit monochrome.
-        using SKBitmap dithered = DitherToMonochrome(resized);
+        // Cap the printed height, centre-cropping a taller image down rather than printing it at full height.
+        int printedHeight = Math.Min(targetHeight, MaxImageHeightPx);
+        int cropTop = (targetHeight - printedHeight) / 2;
+        using SKBitmap cropped = new(contentWidth, printedHeight);
+        using (SKCanvas cropCanvas = new(cropped))
+            cropCanvas.DrawBitmap(resized, new SKRect(0, cropTop, contentWidth, cropTop + printedHeight), new SKRect(0, 0, contentWidth, printedHeight), sampling);
 
-        // Compose onto a full-width canvas with the same margin used for text.
-        int totalHeight = MarginPx + targetHeight + MarginPx;
+        // Dither the cropped image to 1-bit monochrome.
+        using SKBitmap dithered = DitherToMonochrome(cropped);
+
+        // Load the footer's typeface fallback chain, matching the text footer's styling.
+        using SKTypeface typeface = LoadTypeface(config["Chitter:Image:FontPath"] ?? "Assets/Fonts/SpaceGrotesk-Medium.ttf");
+        using SKTypeface emojiTypeface = LoadTypeface(EmojiFontRelativePath);
+        using SKTypeface cjkTypeface = LoadTypeface(CjkFontRelativePath);
+        using SKFont footerFont = new(typeface, FooterFontSize);
+        using SKFont footerEmojiFont = new(emojiTypeface, FooterFontSize);
+        using SKFont footerCjkFont = new(cjkTypeface, FooterFontSize);
+        SKFont[] footerFonts = [footerFont, footerEmojiFont, footerCjkFont];
+        using SKPaint paint = new() { Color = SKColors.Black, IsAntialias = true };
+
+        // Compose the image and footer onto a full-width canvas with the same margin used for text.
+        int footerBlockHeight = FooterBlockHeight();
+        int totalHeight = MarginPx + printedHeight + MarginPx + footerBlockHeight + MarginPx;
         using SKBitmap bitmap = new(WidthPx, totalHeight);
         bitmap.Erase(SKColors.White);
         using (SKCanvas canvas = new(bitmap))
+        {
             canvas.DrawBitmap(dithered, MarginPx, MarginPx, sampling);
+            DrawFooter(canvas, footerFonts, paint, contentWidth, MarginPx + printedHeight + MarginPx);
+        }
 
-        // Convert the bitmap to a 1-bit monochrome raster image, split into paced bands, and send it to the printer.
-        List<byte[]> segments = BuildImageSegments(bitmap);
+        // Convert the bitmap to a 1-bit monochrome raster image and send it to the printer as a single unbanded command, since a paced seam between bands is visible on a photo in a way it isn't on text.
+        List<PrintSegment> segments = BuildImageSegments(bitmap, singleBand: true);
         return await SendPacedAsync(segments);
     }
 
@@ -214,6 +229,36 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
 
         // Return the dithered monochrome bitmap.
         return result;
+    }
+
+    /// <summary>
+    /// Height, in pixels, of the divider line drawn above the footer timestamp.
+    /// </summary>
+    private const int FooterDividerHeight = 24;
+
+    /// <summary>
+    /// The total height, in pixels, of the footer block (divider plus timestamp line).
+    /// </summary>
+    private int FooterBlockHeight() => FooterDividerHeight + (int)Math.Ceiling(FooterFontSize * 1.3f);
+
+    /// <summary>
+    /// Draws the footer's divider line and timestamp, anchored at the given top y position.
+    /// </summary>
+    /// <param name="canvas">The canvas to draw onto.</param>
+    /// <param name="footerFonts">The fallback chain used for the timestamp text, in priority order.</param>
+    /// <param name="paint">The paint used to draw.</param>
+    /// <param name="contentWidth">The usable content width, in pixels.</param>
+    /// <param name="topY">The y position the footer block starts at.</param>
+    private void DrawFooter(SKCanvas canvas, SKFont[] footerFonts, SKPaint paint, int contentWidth, int topY)
+    {
+        // Draw the divider as an actual line spanning the full content width.
+        float dividerY = topY + (FooterDividerHeight / 2f);
+        canvas.DrawLine(MarginPx, dividerY, MarginPx + contentWidth, dividerY, paint);
+
+        // Draw the timestamp beneath it.
+        float timestampY = topY + FooterDividerHeight + FooterFontSize;
+        string footerTimestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+        DrawMixedText(canvas, footerTimestamp, MarginPx, timestampY, footerFonts, paint);
     }
 
     /// <summary>
@@ -356,10 +401,18 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     }
 
     /// <summary>
+    /// One ESC/POS byte segment to send to the printer, paired with how long to wait after sending it before the next segment goes out.
+    /// </summary>
+    /// <param name="Data">The raw bytes to write to the printer's socket.</param>
+    /// <param name="DelayAfterMs">How long to wait after this segment is flushed before sending the next one.</param>
+    private readonly record struct PrintSegment(byte[] Data, int DelayAfterMs);
+
+    /// <summary>
     /// Converts the given bitmap to a 1-bit monochrome bitmap and splits it into ESC/POS byte segments.
     /// </summary>
     /// <param name="bitmap">The bitmap to print, already sized to the printer's usable width.</param>
-    private List<byte[]> BuildImageSegments(SKBitmap bitmap)
+    /// <param name="singleBand">If true, the whole bitmap is sent as one unpaced raster command instead of being split into MaxBandHeightPx-tall bands with a delay between each.</param>
+    private List<PrintSegment> BuildImageSegments(SKBitmap bitmap, bool singleBand = false)
     {
         // Calculate the width in bytes (1 byte = 8 pixels).
         int widthBytes = (bitmap.Width + 7) / 8;
@@ -383,13 +436,17 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
         }
 
         // Setup segment: initialize printer, then feed the configured number of lines before the image starts.
-        List<byte[]> segments = [];
-        segments.Add([0x1B, 0x40, 0x1B, 0x64, (byte)FeedBefore]);
+        List<PrintSegment> segments = [];
+        segments.Add(new PrintSegment([0x1B, 0x40, 0x1B, 0x64, (byte)FeedBefore], singleBand ? 0 : BandDelayMs));
 
-        // Split the raster data into bands of at most MaxBandHeightPx rows.
-        for (int bandStartRow = 0; bandStartRow < bitmap.Height; bandStartRow += MaxBandHeightPx)
+        // BandDelayMs is tuned for a full MaxBandHeightPx-tall band; scale it down for any shorter band. Unused in single-band mode, where there's only ever one band and no pacing at all.
+        double delayMsPerRow = BandDelayMs / (double)MaxBandHeightPx;
+
+        // In single-band mode, treat the whole bitmap as one band; otherwise split it into MaxBandHeightPx-tall bands.
+        int bandHeightPx = singleBand ? bitmap.Height : MaxBandHeightPx;
+        for (int bandStartRow = 0; bandStartRow < bitmap.Height; bandStartRow += bandHeightPx)
         {
-            int bandHeight = Math.Min(MaxBandHeightPx, bitmap.Height - bandStartRow);
+            int bandHeight = Math.Min(bandHeightPx, bitmap.Height - bandStartRow);
             int bandByteOffset = bandStartRow * widthBytes;
             int bandByteLength = bandHeight * widthBytes;
 
@@ -401,11 +458,13 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
             byte[] imageHeader = [0x1D, 0x76, 0x30, 0x00, (byte)xL, (byte)xH, (byte)yL, (byte)yH];
             Array.Copy(imageHeader, bandSegment, imageHeader.Length);
             Array.Copy(rasterBitmap, bandByteOffset, bandSegment, imageHeader.Length, bandByteLength);
-            segments.Add(bandSegment);
+
+            int delayAfterMs = singleBand ? 0 : (int)Math.Round(delayMsPerRow * bandHeight);
+            segments.Add(new PrintSegment(bandSegment, delayAfterMs));
         }
 
         // Final segment: feed the configured number of lines after the image, then cut.
-        segments.Add([0x1B, 0x64, (byte)FeedAfter, 0x1D, 0x56, 0x00]);
+        segments.Add(new PrintSegment([0x1B, 0x64, (byte)FeedAfter, 0x1D, 0x56, 0x00], 0));
 
         return segments;
     }
@@ -415,7 +474,7 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     /// </summary>
     /// <param name="segments">The ordered ESC/POS byte segments to send.</param>
     /// <returns>True if all segments were sent successfully, false otherwise.</returns>
-    private async Task<bool> SendPacedAsync(List<byte[]> segments)
+    private async Task<bool> SendPacedAsync(List<PrintSegment> segments)
     {
         try
         {
@@ -427,10 +486,10 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
             // Iterate through each segment.
             for (int i = 0; i < segments.Count; i++)
             {
-                await stream.WriteAsync(segments[i]);
+                await stream.WriteAsync(segments[i].Data);
                 await stream.FlushAsync();
-                if (i < segments.Count - 1)
-                    await Task.Delay(BandDelayMs);
+                if (i < segments.Count - 1 && segments[i].DelayAfterMs > 0)
+                    await Task.Delay(segments[i].DelayAfterMs);
             }
             return true;
         }
