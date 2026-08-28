@@ -72,14 +72,24 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     private readonly int MaxBandHeightPx = config.GetValue<int?>("Chitter:Image:MaxBandHeightPx") ?? 48;
 
     /// <summary>
-    /// Maximum height, in pixels, an uploaded photo is allowed to print at - a tall photo is centre-cropped down to this rather than sent at full height, since PrintImageAsync sends the whole thing as one unbanded command and a very tall one can overwhelm the printer's receive buffer.
+    /// Maximum width, in pixels, an uploaded photo is allowed to print at - null (the default) means the full printable width, since ImageDensityMode keeps the transmitted data small without needing to shrink the physical print.
     /// </summary>
-    private readonly int MaxImageHeightPx = config.GetValue<int?>("Chitter:Image:MaxImageHeightPx") ?? 640;
+    private readonly int? MaxImageWidthPx = config.GetValue<int?>("Chitter:Image:MaxImageWidthPx");
+
+    /// <summary>
+    /// Maximum height, in pixels, an uploaded photo is allowed to print at - a tall photo is centre-cropped down to this rather than sent at full height.
+    /// </summary>
+    private readonly int MaxImageHeightPx = config.GetValue<int?>("Chitter:Image:MaxImageHeightPx") ?? 480;
 
     /// <summary>
     /// Delay, in milliseconds, after each image band is flushed to the printer, giving it time to physically print and drain its receive buffer before the next band arrives.
     /// </summary>
     private readonly int BandDelayMs = config.GetValue<int?>("Chitter:Image:BandDelayMs") ?? 700;
+
+    /// <summary>
+    /// The density mode byte (m) sent in the GS v 0 raster header for a photo. 3 doubles both width and height on the printer side, so only a quarter of the pixel data needs to be transmitted for the same physical print size - 1 doubles width only, 2 doubles height only, 0 disables doubling and transmits at full resolution. Not every ESC/POS-compatible printer honours modes above 0, so this is safe to flip back to 0 via config alone if a photo prints garbled, with no redeploy needed.
+    /// </summary>
+    private readonly int ImageDensityMode = config.GetValue<int?>("Chitter:Image:DensityMode") ?? 3;
 
     /// <summary>
     /// Renders the given body text with a divider-and-timestamp footer beneath it, and sends the resulting image to the printer.
@@ -150,21 +160,19 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
         // Decode the uploaded image.
         using SKBitmap original = SKBitmap.Decode(imageStream) ?? throw new InvalidOperationException("Could not decode image.");
 
-        // Resize to the printer's usable content width, preserving aspect ratio.
+        // Resize to MaxImageWidthPx (not the full printable width - see its doc comment), preserving aspect ratio.
         int contentWidth = WidthPx - (MarginPx * 2);
-        int targetHeight = Math.Max(1, (int)Math.Round(original.Height * (contentWidth / (double)original.Width)));
+        int printedWidth = Math.Min(MaxImageWidthPx ?? contentWidth, contentWidth);
+        int targetHeight = Math.Max(1, (int)Math.Round(original.Height * (printedWidth / (double)original.Width)));
         SKSamplingOptions sampling = new(SKFilterMode.Linear, SKMipmapMode.None);
-        using SKBitmap resized = original.Resize(new SKImageInfo(contentWidth, targetHeight), sampling) ?? throw new InvalidOperationException("Could not resize image.");
+        using SKBitmap resized = original.Resize(new SKImageInfo(printedWidth, targetHeight), sampling) ?? throw new InvalidOperationException("Could not resize image.");
 
         // Cap the printed height, centre-cropping a taller image down rather than printing it at full height.
         int printedHeight = Math.Min(targetHeight, MaxImageHeightPx);
         int cropTop = (targetHeight - printedHeight) / 2;
-        using SKBitmap cropped = new(contentWidth, printedHeight);
+        using SKBitmap cropped = new(printedWidth, printedHeight);
         using (SKCanvas cropCanvas = new(cropped))
-            cropCanvas.DrawBitmap(resized, new SKRect(0, cropTop, contentWidth, cropTop + printedHeight), new SKRect(0, 0, contentWidth, printedHeight), sampling);
-
-        // Dither the cropped image to 1-bit monochrome.
-        using SKBitmap dithered = DitherToMonochrome(cropped);
+            cropCanvas.DrawBitmap(resized, new SKRect(0, cropTop, printedWidth, cropTop + printedHeight), new SKRect(0, 0, printedWidth, printedHeight), sampling);
 
         // Load the footer's typeface fallback chain, matching the text footer's styling.
         using SKTypeface typeface = LoadTypeface(config["Chitter:Image:FontPath"] ?? "Assets/Fonts/SpaceGrotesk-Medium.ttf");
@@ -176,19 +184,38 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
         SKFont[] footerFonts = [footerFont, footerEmojiFont, footerCjkFont];
         using SKPaint paint = new() { Color = SKColors.Black, IsAntialias = true };
 
-        // Compose the image and footer onto a full-width canvas with the same margin used for text.
-        int footerBlockHeight = FooterBlockHeight();
-        int totalHeight = MarginPx + printedHeight + MarginPx + footerBlockHeight + MarginPx;
-        using SKBitmap bitmap = new(WidthPx, totalHeight);
-        bitmap.Erase(SKColors.White);
-        using (SKCanvas canvas = new(bitmap))
+        // Compose the photo, plus its top/bottom margin, onto a full-width canvas at full resolution, centring it horizontally.
+        int regionHeight = MarginPx + printedHeight + MarginPx;
+        using SKBitmap region = new(WidthPx, regionHeight);
+        region.Erase(SKColors.White);
+        using (SKCanvas regionCanvas = new(region))
         {
-            canvas.DrawBitmap(dithered, MarginPx, MarginPx, sampling);
-            DrawFooter(canvas, footerFonts, paint, contentWidth, MarginPx + printedHeight + MarginPx);
+            float imageX = MarginPx + ((contentWidth - printedWidth) / 2f);
+            regionCanvas.DrawBitmap(cropped, imageX, MarginPx, sampling);
         }
 
-        // Convert the bitmap to a 1-bit monochrome raster image and send it to the printer as a single unbanded command, since a paced seam between bands is visible on a photo in a way it isn't on text.
-        List<PrintSegment> segments = BuildImageSegments(bitmap, singleBand: true);
+        // Downscale the whole region by ImageDensityMode's doubling factor before dithering, so the printer can double it back to the same physical size while only receiving a quarter (or half, for the width/height-only modes) of the pixel data. DensityMode 0 skips this - scale stays 1, and the full-resolution region is transmitted as-is.
+        int scale = ImageDensityMode == 0 ? 1 : 2;
+        int transmitWidth = Math.Max(1, WidthPx / scale);
+        int transmitHeight = Math.Max(1, regionHeight / scale);
+        using SKBitmap transmitRegion = region.Resize(new SKImageInfo(transmitWidth, transmitHeight), sampling) ?? throw new InvalidOperationException("Could not resize image region for transmission.");
+        using SKBitmap ditheredRegion = DitherToMonochrome(transmitRegion);
+
+        // Build the footer separately, at full resolution and normal density (m=0) - it's text, so it isn't a candidate for the lossy downscale above.
+        int footerBlockHeight = FooterBlockHeight();
+        using SKBitmap footerBitmap = new(WidthPx, footerBlockHeight);
+        footerBitmap.Erase(SKColors.White);
+        using (SKCanvas footerCanvas = new(footerBitmap))
+            DrawFooter(footerCanvas, footerFonts, paint, contentWidth, 0);
+
+        // Send the footer's raster command first, then the photo's - each raster is packed 180-degree-rotated internally (see BuildRasterCommand/rotatedX/rotatedY), which makes the printer's overall visual order the reverse of transmission order, so sending the photo last is what puts it on top with the footer beneath it. The divider line already visually separates the two, so there's no seam to see at that boundary.
+        List<PrintSegment> segments =
+        [
+            new PrintSegment([0x1B, 0x40, 0x1B, 0x64, (byte)FeedBefore], BandDelayMs),
+            new PrintSegment(BuildRasterCommand(footerBitmap, 0), BandDelayMs),
+            new PrintSegment(BuildRasterCommand(ditheredRegion, (byte)ImageDensityMode), BandDelayMs),
+            new PrintSegment([0x1B, 0x64, (byte)FeedAfter, 0x1D, 0x56, 0x00], 0),
+        ];
         return await SendPacedAsync(segments);
     }
 
@@ -422,11 +449,46 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
     private readonly record struct PrintSegment(byte[] Data, int DelayAfterMs);
 
     /// <summary>
-    /// Converts the given bitmap to a 1-bit monochrome bitmap and splits it into ESC/POS byte segments.
+    /// Thresholds the given bitmap to black/white by luminance, packs it into ESC/POS raster bytes, and prefixes the GS v 0 header for the given density mode.
+    /// </summary>
+    /// <param name="bitmap">The bitmap to pack - a dithered image or plain rendered text/lines, either works since this thresholds by luminance either way.</param>
+    /// <param name="densityMode">The density mode byte (m) for the GS v 0 header - 0 prints the transmitted pixels 1:1, higher values double the transmitted data on one or both axes at the printer.</param>
+    private static byte[] BuildRasterCommand(SKBitmap bitmap, byte densityMode)
+    {
+        int widthBytes = (bitmap.Width + 7) / 8;
+        byte[] rasterBitmap = new byte[widthBytes * bitmap.Height];
+
+        for (int y = 0; y < bitmap.Height; y++)
+        {
+            for (int x = 0; x < bitmap.Width; x++)
+            {
+                SKColor pixel = bitmap.GetPixel(x, y);
+                int luminance = (pixel.Red + pixel.Green + pixel.Blue) / 3;
+                if (luminance < 128)
+                {
+                    int rotatedY = bitmap.Height - 1 - y;
+                    int rotatedX = bitmap.Width - 1 - x;
+                    rasterBitmap[(rotatedY * widthBytes) + (rotatedX / 8)] |= (byte)(0x80 >> (rotatedX % 8));
+                }
+            }
+        }
+
+        int xL = widthBytes & 0xFF;
+        int xH = (widthBytes >> 8) & 0xFF;
+        int yL = bitmap.Height & 0xFF;
+        int yH = (bitmap.Height >> 8) & 0xFF;
+        byte[] header = [0x1D, 0x76, 0x30, densityMode, (byte)xL, (byte)xH, (byte)yL, (byte)yH];
+        byte[] command = new byte[header.Length + rasterBitmap.Length];
+        Array.Copy(header, command, header.Length);
+        Array.Copy(rasterBitmap, 0, command, header.Length, rasterBitmap.Length);
+        return command;
+    }
+
+    /// <summary>
+    /// Converts the given bitmap to a 1-bit monochrome bitmap and splits it into ESC/POS byte segments, banded to at most MaxBandHeightPx rows each, all at normal density (m=0). Used for body text, which prints densely enough that a paced seam between bands isn't visible - PrintImageAsync sends a photo as its own, separately-built raster command instead (see BuildRasterCommand), since a seam is visible on continuous-tone content.
     /// </summary>
     /// <param name="bitmap">The bitmap to print, already sized to the printer's usable width.</param>
-    /// <param name="singleBand">If true, the whole bitmap is sent as one unpaced raster command instead of being split into MaxBandHeightPx-tall bands with a delay between each.</param>
-    private List<PrintSegment> BuildImageSegments(SKBitmap bitmap, bool singleBand = false)
+    private List<PrintSegment> BuildImageSegments(SKBitmap bitmap)
     {
         // Calculate the width in bytes (1 byte = 8 pixels).
         int widthBytes = (bitmap.Width + 7) / 8;
@@ -449,18 +511,17 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
             }
         }
 
-        // Setup segment: initialize printer, then feed the configured number of lines before the image starts.
-        List<PrintSegment> segments = [];
-        segments.Add(new PrintSegment([0x1B, 0x40, 0x1B, 0x64, (byte)FeedBefore], singleBand ? 0 : BandDelayMs));
-
-        // BandDelayMs is tuned for a full MaxBandHeightPx-tall band; scale it down for any shorter band. Unused in single-band mode, where there's only ever one band and no pacing at all.
+        // BandDelayMs scaled per row so any band shorter than a full one waits proportionally less.
         double delayMsPerRow = BandDelayMs / (double)MaxBandHeightPx;
 
-        // In single-band mode, treat the whole bitmap as one band; otherwise split it into MaxBandHeightPx-tall bands.
-        int bandHeightPx = singleBand ? bitmap.Height : MaxBandHeightPx;
-        for (int bandStartRow = 0; bandStartRow < bitmap.Height; bandStartRow += bandHeightPx)
+        // Setup segment: initialize printer, then feed the configured number of lines before the image starts. This is just a fixed settle pause, not scaled to bandHeightPx - there's no band to wait on yet.
+        List<PrintSegment> segments = [];
+        segments.Add(new PrintSegment([0x1B, 0x40, 0x1B, 0x64, (byte)FeedBefore], BandDelayMs));
+
+        // Split the raster data into bands of at most MaxBandHeightPx rows, each paced by how long it actually took to print - a shorter final band waits proportionally less than a full one.
+        for (int bandStartRow = 0; bandStartRow < bitmap.Height; bandStartRow += MaxBandHeightPx)
         {
-            int bandHeight = Math.Min(bandHeightPx, bitmap.Height - bandStartRow);
+            int bandHeight = Math.Min(MaxBandHeightPx, bitmap.Height - bandStartRow);
             int bandByteOffset = bandStartRow * widthBytes;
             int bandByteLength = bandHeight * widthBytes;
 
@@ -473,7 +534,7 @@ public class ChitterPrintService(IConfiguration config, IWebHostEnvironment env,
             Array.Copy(imageHeader, bandSegment, imageHeader.Length);
             Array.Copy(rasterBitmap, bandByteOffset, bandSegment, imageHeader.Length, bandByteLength);
 
-            int delayAfterMs = singleBand ? 0 : (int)Math.Round(delayMsPerRow * bandHeight);
+            int delayAfterMs = (int)Math.Round(delayMsPerRow * bandHeight);
             segments.Add(new PrintSegment(bandSegment, delayAfterMs));
         }
 
